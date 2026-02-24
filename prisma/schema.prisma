@@ -1,0 +1,114 @@
+// Pluto - Real-time Interactive Presentation Chat Application
+// Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Admin users who manage sessions
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  sessions Session[]
+  
+  @@map("admins")
+}
+
+// Presentation sessions
+model Session {
+  id             String   @id @default(cuid())
+  title          String
+  code           String   @unique // 6-character join code
+  isActive       Boolean  @default(true)
+  backgroundType String   @default("color") // "color", "image", "video"
+  backgroundUrl  String?  // URL for image/video
+  themeConfig    Json     @default("{\"primary\":\"#3b82f6\",\"secondary\":\"#8b5cf6\",\"background\":\"#1e293b\",\"text\":\"#f1f5f9\",\"chatOverlay\":\"rgba(15,23,42,0.9)\",\"fontFamily\":\"Inter\",\"fontSize\":\"16\",\"chatPosition\":\"right\"}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  adminId       String
+  admin         Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  participants  Participant[]
+  
+  @@index([code])
+  @@index([adminId])
+  @@map("sessions")
+}
+
+// Chat messages in sessions
+model Message {
+  id              String   @id @default(cuid())
+  sessionId       String
+  participantName String
+  participantId   String?  // Optional reference to participant
+  type            MessageType @default(TEXT)
+  content         String   @db.Text
+  imageUrl        String?
+  stickerUrl      String?
+  isVisible       Boolean  @default(true)
+  isPinned        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  
+  session     Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participant Participant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  
+  @@index([sessionId, createdAt])
+  @@index([participantId])
+  @@map("messages")
+}
+
+// Anonymous participants in sessions
+model Participant {
+  id          String   @id @default(cuid())
+  sessionId   String
+  anonymousId String   // Frontend-generated UUID
+  nickname    String
+  joinedAt    DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  
+  session  Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  messages Message[]
+  
+  @@unique([sessionId, anonymousId])
+  @@index([sessionId])
+  @@map("participants")
+}
+
+// Media assets (images/videos for backgrounds and stickers)
+model MediaAsset {
+  id          String    @id @default(cuid())
+  type        MediaType
+  url         String
+  filename    String
+  mimeType    String
+  size        Int       // File size in bytes
+  uploadedBy  String?   // Admin ID who uploaded
+  createdAt   DateTime  @default(now())
+  
+  @@index([type])
+  @@map("media_assets")
+}
+
+// Enums
+enum MessageType {
+  TEXT
+  IMAGE
+  STICKER
+  EMOJI
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  STICKER
+}
