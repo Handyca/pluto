@@ -1,0 +1,154 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { WSMessage, WSMessageType } from '@/types';
+
+interface UseWebSocketOptions {
+  url: string;
+  onMessage?: (message: WSMessage) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (error: Event) => void;
+  reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+}
+
+interface UseWebSocketReturn {
+  sendMessage: (message: WSMessage) => void;
+  isConnected: boolean;
+  isConnecting: boolean;
+  disconnect: () => void;
+  reconnect: () => void;
+}
+
+export function useWebSocket({
+  url,
+  onMessage,
+  onOpen,
+  onClose,
+  onError,
+  reconnectInterval = 3000,
+  maxReconnectAttempts = 5,
+}: UseWebSocketOptions): UseWebSocketReturn {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    setIsConnecting(true);
+
+    try {
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setIsConnecting(false);
+        reconnectAttemptsRef.current = 0;
+        onOpen?.();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message: WSMessage = JSON.parse(event.data);
+          onMessage?.(message);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('📴 WebSocket disconnected');
+        setIsConnected(false);
+        setIsConnecting(false);
+        wsRef.current = null;
+        onClose?.();
+
+        // Attempt reconnect
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++;
+          console.log(
+            `🔄 Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`
+          );
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, reconnectInterval);
+        } else {
+          console.error('❌ Max reconnection attempts reached');
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+        setIsConnecting(false);
+        onError?.(error);
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      setIsConnecting(false);
+    }
+  }, [url, onMessage, onOpen, onClose, onError, reconnectInterval, maxReconnectAttempts]);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    setIsConnected(false);
+    setIsConnecting(false);
+    reconnectAttemptsRef.current = maxReconnectAttempts; // Prevent auto-reconnect
+  }, [maxReconnectAttempts]);
+
+  const reconnect = useCallback(() => {
+    disconnect();
+    reconnectAttemptsRef.current = 0;
+    connect();
+  }, [connect, disconnect]);
+
+  const sendMessage = useCallback((message: WSMessage) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    } else {
+      console.warn('WebSocket is not connected. Message not sent:', message);
+    }
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  // Heartbeat
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const interval = setInterval(() => {
+      sendMessage({ type: WSMessageType.PING, payload: {} });
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isConnected, sendMessage]);
+
+  return {
+    sendMessage,
+    isConnected,
+    isConnecting,
+    disconnect,
+    reconnect,
+  };
+}
