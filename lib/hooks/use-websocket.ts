@@ -34,11 +34,21 @@ export function useWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
+  // Keep callback refs stable so they never invalidate the connect() closure.
+  const onMessageRef = useRef(onMessage);
+  const onOpenRef = useRef(onOpen);
+  const onCloseRef = useRef(onClose);
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+  useEffect(() => { onOpenRef.current = onOpen; }, [onOpen]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+
+  // connect/disconnect are now stable (only depend on url + scalar config)
+  // because callbacks are accessed via refs.
   const connect = useCallback(() => {
     if (!url) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
-    }
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setIsConnecting(true);
 
@@ -50,13 +60,13 @@ export function useWebSocket({
         setIsConnected(true);
         setIsConnecting(false);
         reconnectAttemptsRef.current = 0;
-        onOpen?.();
+        onOpenRef.current?.();
       };
 
       ws.onmessage = (event) => {
         try {
           const message: WSMessage = JSON.parse(event.data);
-          onMessage?.(message);
+          onMessageRef.current?.(message);
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
         }
@@ -67,7 +77,7 @@ export function useWebSocket({
         setIsConnected(false);
         setIsConnecting(false);
         wsRef.current = null;
-        onClose?.();
+        onCloseRef.current?.();
 
         // Attempt reconnect
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -84,12 +94,9 @@ export function useWebSocket({
       };
 
       ws.onerror = () => {
-        // Browser WebSocket error events are always empty ({}) for security reasons.
-        // The actual cause is visible in the Network tab. Most common: the WS
-        // server on port 3001 is not running — start it with `bun run dev`.
         console.warn(`⚠️ WebSocket connection failed (${url}). Is the WS server running? Start with: bun run dev`);
         setIsConnecting(false);
-        onError?.(new Event('error'));
+        onErrorRef.current?.(new Event('error'));
       };
 
       wsRef.current = ws;
@@ -97,7 +104,7 @@ export function useWebSocket({
       console.error('Failed to create WebSocket connection:', error);
       setIsConnecting(false);
     }
-  }, [url, onMessage, onOpen, onClose, onError, reconnectInterval, maxReconnectAttempts]);
+  }, [url, reconnectInterval, maxReconnectAttempts]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

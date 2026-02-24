@@ -36,16 +36,17 @@ async function start() {
   const wss = new WebSocketServer({ noServer: true });
   new WebSocketManager(wss);
 
-  // Route HTTP Upgrade requests at /ws to the WebSocket server.
+  // Route HTTP Upgrade requests at /ws to our WebSocket server.
+  // All other upgrade paths (e.g. Next.js HMR /_next/webpack-hmr) are left
+  // untouched so Next.js can attach its own listeners later.
   server.on('upgrade', (req, socket, head) => {
     const { pathname } = parse(req.url || '');
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });
-    } else {
-      socket.destroy();
     }
+    // Do NOT destroy the socket for other paths — Next.js handles its own upgrades.
   });
 
   server.listen(port, hostname, () => {
