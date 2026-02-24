@@ -84,8 +84,9 @@ export interface ApiResponse<T = any> {
   message?: string;
 }
 
-// Session with relations
-export interface SessionWithRelations extends Session {
+// Session with relations (intersection rather than interface-extends so TypeScript
+// correctly resolves all scalars from the Prisma-generated Session type alias)
+export type SessionWithRelations = Session & {
   admin: Admin;
   messages?: Message[];
   participants?: Participant[];
@@ -93,13 +94,13 @@ export interface SessionWithRelations extends Session {
     messages: number;
     participants: number;
   };
-}
+};
 
 // Message with relations
-export interface MessageWithRelations extends Message {
+export type MessageWithRelations = Message & {
   participant?: Participant | null;
   session?: Session;
-}
+};
 
 // Upload response
 export interface UploadResponse {

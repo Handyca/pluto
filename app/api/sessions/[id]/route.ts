@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { getWsManager } from '@/lib/ws-manager';
 
 export const runtime = 'nodejs';
 
@@ -125,6 +126,21 @@ export async function PATCH(
       where: { id },
       data: validatedData,
     });
+
+    // Broadcast real-time updates to all clients watching this session.
+    const wsManager = getWsManager();
+    if (wsManager) {
+      if ('backgroundType' in validatedData || 'backgroundUrl' in validatedData) {
+        wsManager.broadcastBackgroundUpdate(
+          id,
+          updatedSession.backgroundType,
+          updatedSession.backgroundUrl ?? undefined,
+        );
+      }
+      if ('themeConfig' in validatedData) {
+        wsManager.broadcastThemeUpdate(id, updatedSession.themeConfig);
+      }
+    }
 
     return NextResponse.json({
       success: true,

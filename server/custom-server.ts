@@ -16,6 +16,7 @@ import { parse } from 'url';
 import next from 'next';
 import { WebSocketServer } from 'ws';
 import { WebSocketManager } from './websocket';
+import { setWsManager } from '@/lib/ws-manager';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOST || '0.0.0.0';
@@ -34,7 +35,9 @@ async function start() {
 
   // WebSocket server — attached to the HTTP server, no separate port.
   const wss = new WebSocketServer({ noServer: true });
-  new WebSocketManager(wss);
+  const wsManager = new WebSocketManager(wss);
+  // Expose singleton so Next.js Route Handlers can broadcast events.
+  setWsManager(wsManager);
 
   // Route HTTP Upgrade requests at /ws to our WebSocket server.
   // All other upgrade paths (e.g. Next.js HMR /_next/webpack-hmr) are left

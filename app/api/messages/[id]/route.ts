@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { getWsManager } from '@/lib/ws-manager';
 
 export const runtime = 'nodejs';
 
@@ -53,6 +54,9 @@ export async function PATCH(
       where: { id },
       data: validatedData,
     });
+
+    // Broadcast visibility/pin change to all connected clients in real-time.
+    getWsManager()?.broadcastMessageUpdate(message.sessionId, id, validatedData);
 
     return NextResponse.json({
       success: true,
@@ -114,6 +118,9 @@ export async function DELETE(
     await prisma.message.delete({
       where: { id },
     });
+
+    // Broadcast deletion to all connected clients in real-time.
+    getWsManager()?.broadcastMessageDelete(message.sessionId, id);
 
     return NextResponse.json({
       success: true,

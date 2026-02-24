@@ -86,7 +86,8 @@ export default function PresenterPage({
     }
   }, [isConnected, sessionData, code, sendMessage]);
 
-  // Apply theme to CSS variables
+  // Apply theme to CSS variables (--primary overrides Tailwind so all
+  // text-primary / bg-primary / border-primary utilities match the theme).
   useEffect(() => {
     if (themeConfig) {
       const root = document.documentElement;
@@ -97,6 +98,8 @@ export default function PresenterPage({
       root.style.setProperty('--theme-chat-overlay', themeConfig.chatOverlay);
       root.style.setProperty('--theme-font-family', themeConfig.fontFamily);
       root.style.setProperty('--theme-font-size', `${themeConfig.fontSize}px`);
+      // Let Tailwind colour utilities reflect the presenter theme.
+      root.style.setProperty('--primary', themeConfig.primary);
     }
   }, [themeConfig]);
 
@@ -179,6 +182,7 @@ export default function PresenterPage({
         className={`absolute ${chatPositionClasses[chatPosition]} z-20 flex flex-col`}
         style={{ 
           background: themeConfig?.chatOverlay || 'rgba(15,23,42,0.9)',
+          fontFamily: themeConfig?.fontFamily || 'Inter, sans-serif',
         }}
       >
         <div className="p-4 border-b border-white/10">
