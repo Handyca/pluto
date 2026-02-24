@@ -9,13 +9,13 @@ const joinSchema = z.object({
   anonymousId: z.string().optional(),
 });
 
-// POST /api/sessions/[code]/join - Join session as participant
+// POST /api/sessions/[id]/join - Join session as participant (id = session code)
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ code: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { code } = await params;
+    const { id: code } = await params;
     const body = await request.json();
     const { participantName, anonymousId: providedAnonymousId } = joinSchema.parse(body);
 
@@ -118,13 +118,13 @@ export async function POST(
   }
 }
 
-// GET /api/sessions/[code]/join - Get session info by code (public)
+// GET /api/sessions/[id]/join - Get session info by code (public)
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ code: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { code } = await params;
+    const { id: code } = await params;
 
     const session = await prisma.session.findUnique({
       where: { code },
