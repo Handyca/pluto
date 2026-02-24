@@ -35,6 +35,7 @@ export function useWebSocket({
   const [isConnecting, setIsConnecting] = useState(false);
 
   const connect = useCallback(() => {
+    if (!url) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }

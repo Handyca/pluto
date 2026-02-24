@@ -15,7 +15,7 @@ import { WSMessageType, Message, MessageType } from '@/types';
 import { Send, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { generateAnonymousId } from '@/lib/utils';
+import { generateAnonymousId, getWsUrl } from '@/lib/utils';
 
 export default function JoinPage({
   params,
@@ -37,8 +37,9 @@ export default function JoinPage({
   const joinMutation = useJoinSession();
 
   // WebSocket connection
+  const [wsUrl] = useState(() => getWsUrl());
   const { sendMessage: sendWsMessage, isConnected } = useWebSocket({
-    url: `ws://localhost:${process.env.NEXT_PUBLIC_WS_PORT || 3001}`,
+    url: wsUrl,
     onMessage: (wsMessage) => {
       switch (wsMessage.type) {
         case WSMessageType.SESSION_JOINED:

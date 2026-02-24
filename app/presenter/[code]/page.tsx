@@ -7,6 +7,7 @@ import { VideoBackground } from '@/components/video-background';
 import { MessageBubble } from '@/components/message-bubble';
 import { SessionCodeDisplay } from '@/components/session-code-display';
 import { useWebSocket } from '@/lib/hooks/use-websocket';
+import { getWsUrl } from '@/lib/utils';
 import { WSMessageType, Message, ThemeConfig } from '@/types';
 import { AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
@@ -25,9 +26,11 @@ export default function PresenterPage({
   // Fetch session data
   const { data: sessionData, isLoading, error } = useSessionByCode(code);
 
-  // WebSocket connection
+  // WebSocket connection — derive URL from current hostname so it works from
+  // any host (localhost, dev containers, remote servers).
+  const [wsUrl] = useState(() => getWsUrl());
   const { sendMessage, isConnected } = useWebSocket({
-    url: `ws://localhost:${process.env.NEXT_PUBLIC_WS_PORT || 3001}`,
+    url: wsUrl,
     onMessage: (wsMessage) => {
       switch (wsMessage.type) {
         case WSMessageType.SESSION_JOINED:

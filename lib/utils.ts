@@ -5,6 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// Build a WebSocket URL using the current browser hostname so it works from
+// any host (localhost, dev container, remote server, etc.).
+export function getWsUrl(): string {
+  const port = process.env.NEXT_PUBLIC_WS_PORT || '3001';
+  if (typeof window === 'undefined') {
+    return `ws://localhost:${port}`;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${protocol}://${window.location.hostname}:${port}`;
+}
+
 // Generate a unique anonymous ID (UUID v4)
 export function generateAnonymousId(): string {
   return crypto.randomUUID();
