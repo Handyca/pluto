@@ -3,8 +3,10 @@ import Credentials from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { authConfig } from './auth.config';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -47,44 +49,5 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  pages: {
-    signIn: '/admin/login',
-  },
-  callbacks: {
-    authorized: async ({ auth, request: { nextUrl } }) => {
-      const isLoggedIn = !!auth?.user;
-      const isOnAdminPanel = nextUrl.pathname.startsWith('/admin');
-      const isOnLoginPage = nextUrl.pathname.startsWith('/admin/login');
-
-      if (isOnAdminPanel && !isOnLoginPage) {
-        return isLoggedIn; // Redirect to login if not logged in
-      }
-
-      if (isOnLoginPage && isLoggedIn) {
-        return Response.redirect(new URL('/admin', nextUrl));
-      }
-
-      return true;
-    },
-    jwt: async ({ token, user }) => {
-      if (user) {
-        token.id = user.id;
-        token.email = user.email;
-        token.name = user.name;
-      }
-      return token;
-    },
-    session: async ({ session, token }) => {
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.email = token.email as string;
-        session.user.name = token.name as string;
-      }
-      return session;
-    },
-  },
-  session: {
-    strategy: 'jwt',
-  },
   secret: process.env.NEXTAUTH_SECRET,
 });

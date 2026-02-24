@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { verifyParticipantToken, extractParticipantToken } from '@/lib/participant-auth';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const createMessageSchema = z.object({
   sessionId: z.string().cuid(),
   participantName: z.string().min(1).max(50),
@@ -158,7 +160,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid data', details: error.errors },
+        { success: false, error: 'Invalid data', details: error.issues },
         { status: 400 }
       );
     }

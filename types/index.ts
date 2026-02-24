@@ -1,7 +1,8 @@
 import { Session, Message, Participant, Admin, MediaAsset, MessageType, MediaType } from '@prisma/client';
 
-// Re-export Prisma types
-export type { Session, Message, Participant, Admin, MediaAsset, MessageType, MediaType };
+// Re-export Prisma types and enums
+export type { Session, Message, Participant, Admin, MediaAsset };
+export { MessageType, MediaType };
 
 // Theme configuration
 export interface ThemeConfig {

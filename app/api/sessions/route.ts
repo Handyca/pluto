@@ -4,11 +4,13 @@ import { prisma } from '@/lib/prisma';
 import { generateSessionCode } from '@/lib/utils';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const createSessionSchema = z.object({
   title: z.string().min(1).max(100),
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
   backgroundUrl: z.string().url().optional().nullable(),
-  themeConfig: z.record(z.any()).optional(),
+  themeConfig: z.record(z.string(), z.any()).optional(),
 });
 
 // GET /api/sessions - Get all sessions for admin
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid data', details: error.errors },
+        { success: false, error: 'Invalid data', details: error.issues },
         { status: 400 }
       );
     }

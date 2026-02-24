@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { generateAnonymousId } from '@/lib/utils';
 import { createParticipantToken } from '@/lib/participant-auth';
 import { z } from 'zod';
-
+export const runtime = 'nodejs';
 const joinSchema = z.object({
   participantName: z.string().min(1).max(50),
   anonymousId: z.string().optional(),
@@ -105,7 +105,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid data', details: error.errors },
+        { success: false, error: 'Invalid data', details: error.issues },
         { status: 400 }
       );
     }

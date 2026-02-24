@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const updateMessageSchema = z.object({
   isVisible: z.boolean().optional(),
   isPinned: z.boolean().optional(),
@@ -60,7 +62,7 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid data', details: error.errors },
+        { success: false, error: 'Invalid data', details: error.issues },
         { status: 400 }
       );
     }

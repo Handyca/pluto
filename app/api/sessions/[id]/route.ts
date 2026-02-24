@@ -3,12 +3,14 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
+export const runtime = 'nodejs';
+
 const updateSessionSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   isActive: z.boolean().optional(),
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
   backgroundUrl: z.string().url().optional().nullable(),
-  themeConfig: z.record(z.any()).optional(),
+  themeConfig: z.record(z.string(), z.any()).optional(),
 });
 
 // GET /api/sessions/[id]
@@ -132,7 +134,7 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { success: false, error: 'Invalid data', details: error.errors },
+        { success: false, error: 'Invalid data', details: error.issues },
         { status: 400 }
       );
     }

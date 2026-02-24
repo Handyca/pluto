@@ -6,6 +6,8 @@ import { join } from 'path';
 import { isValidImageType, isValidVideoType } from '@/lib/utils';
 import { nanoid } from 'nanoid';
 
+export const runtime = 'nodejs';
+
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
