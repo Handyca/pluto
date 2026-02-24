@@ -79,14 +79,17 @@ export function useWebSocket({
             connect();
           }, reconnectInterval);
         } else {
-          console.error('❌ Max reconnection attempts reached');
+          console.error(`❌ WebSocket: gave up after ${maxReconnectAttempts} attempts to connect to ${url}. Make sure the WS server is running: bun run dev`);
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
+      ws.onerror = () => {
+        // Browser WebSocket error events are always empty ({}) for security reasons.
+        // The actual cause is visible in the Network tab. Most common: the WS
+        // server on port 3001 is not running — start it with `bun run dev`.
+        console.warn(`⚠️ WebSocket connection failed (${url}). Is the WS server running? Start with: bun run dev`);
         setIsConnecting(false);
-        onError?.(error);
+        onError?.(new Event('error'));
       };
 
       wsRef.current = ws;
@@ -127,6 +130,7 @@ export function useWebSocket({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return; // SSR guard
     connect();
 
     return () => {
