@@ -18,18 +18,30 @@ interface SessionRoom {
   clients: Set<ExtendedWebSocket>;
 }
 
-class WebSocketManager {
+export class WebSocketManager {
   private wss: WebSocketServer;
   private rooms: Map<string, SessionRoom> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
-  constructor(port: number) {
-    this.wss = new WebSocketServer({ port });
+  /**
+   * @param portOrWss Pass a port number to start a standalone WS server,
+   *                  or pass an existing WebSocketServer to attach to a shared
+   *                  HTTP server (so WS and HTTP share the same port).
+   */
+  constructor(portOrWss: number | WebSocketServer) {
+    if (typeof portOrWss === 'number') {
+      this.wss = new WebSocketServer({ port: portOrWss });
+    } else {
+      this.wss = portOrWss;
+    }
     this.initialize();
   }
 
   private initialize() {
-    console.log(`🚀 WebSocket server started on port ${WS_PORT}`);
+    const addr = this.wss.options.port
+      ? `port ${this.wss.options.port}`
+      : 'attached server (same port as HTTP)';
+    console.log(`🚀 WebSocket handler initializing on ${addr}`);
 
     this.wss.on('connection', (ws: ExtendedWebSocket, request: IncomingMessage) => {
       console.log('📡 New WebSocket connection');
@@ -275,18 +287,6 @@ class WebSocketManager {
   }
 }
 
-// Create and export WebSocket manager instance
-export const wsManager = new WebSocketManager(WS_PORT);
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('⚠️ SIGTERM received, shutting down WebSocket server');
-  wsManager.stop();
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('⚠️ SIGINT received, shutting down WebSocket server');
-  wsManager.stop();
-  process.exit(0);
-});
+// WebSocketManager is exported above.
+// To run a standalone WS server use:  bun run server/standalone-ws.ts
+// To embed WS in the combined dev server use:  bun run dev

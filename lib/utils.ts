@@ -5,15 +5,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Build a WebSocket URL using the current browser hostname so it works from
-// any host (localhost, dev container, remote server, etc.).
+// Build a WebSocket URL that connects back to the same server the page was
+// loaded from (same host AND port), so it works through any proxy, tunnel or
+// VS Code dev-container port-forwarding without needing a second open port.
 export function getWsUrl(): string {
-  const port = process.env.NEXT_PUBLIC_WS_PORT || '3001';
   if (typeof window === 'undefined') {
-    return `ws://localhost:${port}`;
+    const port = process.env.PORT || '3000';
+    return `ws://localhost:${port}/ws`;
   }
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${protocol}://${window.location.hostname}:${port}`;
+  return `${protocol}://${window.location.host}/ws`;
 }
 
 // Generate a unique anonymous ID (UUID v4)
