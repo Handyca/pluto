@@ -14,6 +14,8 @@ export interface ThemeConfig {
   fontFamily: string;
   fontSize: string;
   chatPosition: 'left' | 'right' | 'bottom';
+  chatMode?: 'chat' | 'wordCloud';
+  showTitle?: boolean;
 }
 
 // WebSocket message types
@@ -39,6 +41,7 @@ export enum WSMessageType {
 // WebSocket message payloads
 export interface WSMessage {
   type: WSMessageType;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload: any;
   timestamp?: number;
 }
@@ -77,7 +80,7 @@ export interface ThemeUpdatedPayload {
 }
 
 // API Response types
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;

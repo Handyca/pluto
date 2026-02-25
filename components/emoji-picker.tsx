@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/popover';
 import { Smile } from 'lucide-react';
 import { useState } from 'react';
-import EmojiPickerLibrary, { Theme } from 'emoji-picker-react';
+import EmojiPickerLibrary, { Theme, EmojiClickData } from 'emoji-picker-react';
 
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
@@ -17,7 +17,7 @@ interface EmojiPickerProps {
 export function EmojiPicker({ onSelect }: EmojiPickerProps) {
   const [open, setOpen] = useState(false);
 
-  const handleSelect = (emojiData: any) => {
+  const handleSelect = (emojiData: EmojiClickData) => {
     onSelect(emojiData.emoji);
     setOpen(false);
   };

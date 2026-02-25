@@ -31,6 +31,8 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // Stable ref to always call the latest `connect` with reconnect logic.
+  const connectRef = useRef<() => void>(() => {});
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -87,7 +89,7 @@ export function useWebSocket({
             `🔄 Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`
           );
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
+            connectRef.current();
           }, reconnectInterval);
         } else {
           console.error(`❌ WebSocket: gave up after ${maxReconnectAttempts} attempts to connect to ${url}. Make sure the WS server is running: bun run dev`);
@@ -107,6 +109,10 @@ export function useWebSocket({
       setIsConnecting(false);
     }
   }, [url, reconnectInterval, maxReconnectAttempts]);
+
+  // Keep connectRef pointing to the latest connect so the onclose timer
+  // always calls the most-recent version of connect.
+  useEffect(() => { connectRef.current = connect; }, [connect]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -142,12 +148,13 @@ export function useWebSocket({
     if (typeof window === 'undefined') return; // SSR guard
     
     console.log(`🔧 useWebSocket initialized with URL: ${url}`);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     connect();
 
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [connect, disconnect, url]);
 
   // Heartbeat
   useEffect(() => {

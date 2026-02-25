@@ -66,14 +66,37 @@ export function generateAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Extension-to-MIME mapping for fallback when file.type is empty (e.g. drag-and-drop)
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif',
+  bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff', svg: 'image/svg+xml',
+  jfif: 'image/jpeg', pjpeg: 'image/jpeg', pjp: 'image/jpeg',
+  mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg',
+  mov: 'video/quicktime', avi: 'video/x-msvideo', mkv: 'video/x-matroska',
+};
+
+export function resolveFileMime(file: File): string {
+  if (file.type) return file.type.toLowerCase();
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return EXT_TO_MIME[ext] ?? '';
+}
+
 // Validate image MIME types
 export function isValidImageType(mimeType: string): boolean {
-  const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  return validTypes.includes(mimeType);
+  const validTypes = [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+    'image/heic', 'image/heif', 'image/avif', 'image/bmp',
+    'image/tiff', 'image/svg+xml', 'image/jfif',
+  ];
+  return validTypes.includes(mimeType.toLowerCase());
 }
 
 // Validate video MIME types
 export function isValidVideoType(mimeType: string): boolean {
-  const validTypes = ['video/mp4', 'video/webm', 'video/ogg'];
-  return validTypes.includes(mimeType);
+  const validTypes = [
+    'video/mp4', 'video/webm', 'video/ogg',
+    'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
+  ];
+  return validTypes.includes(mimeType.toLowerCase());
 }

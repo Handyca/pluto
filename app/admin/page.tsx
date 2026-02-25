@@ -1,11 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { signOut } from 'next-auth/react';
 import { useSessions, useCreateSession, useDeleteSession } from '@/lib/hooks/use-sessions';
+import { AdminLayout } from '@/components/admin-layout';
+import { DashboardStats } from '@/components/dashboard-stats';
 import { PageLoading } from '@/components/loading';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   Dialog,
   DialogContent,
@@ -19,23 +23,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
   Plus, 
-  Eye, 
   Settings, 
   Trash2, 
   Users, 
+  Users2,
   MessageSquare, 
   Copy,
   ExternalLink,
-  LogOut,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import { signOut } from 'next-auth/react';
 
 export default function AdminDashboard() {
-  const router = useRouter();
   const { data: sessions, isLoading } = useSessions();
   const createMutation = useCreateSession();
   const deleteMutation = useDeleteSession();
@@ -48,13 +48,24 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!newSessionTitle.trim()) return;
 
-    await createMutation.mutateAsync({ title: newSessionTitle });
-    setNewSessionTitle('');
-    setIsCreateDialogOpen(false);
+    try {
+      await createMutation.mutateAsync({ title: newSessionTitle });
+      setNewSessionTitle('');
+      setIsCreateDialogOpen(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create session';
+      if (message.includes('sign in')) {
+        await signOut({ callbackUrl: '/admin/login' });
+      }
+    }
   };
 
   const handleDeleteSession = async (id: string) => {
-    await deleteMutation.mutateAsync(id);
+    try {
+      await deleteMutation.mutateAsync(id);
+    } catch {
+      // error already toasted by onError
+    }
     setDeleteConfirm(null);
   };
 
@@ -75,31 +86,37 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Manage your sessions and chat</p>
+    <AdminLayout sessionCount={sessions?.length}>
+      <div className="flex-1 overflow-auto">
+        {/* Header */}
+        <div className="border-b bg-card sticky top-0 z-50">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold">Dashboard</h1>
+                <p className="text-muted-foreground mt-1">Manage your presentation sessions and system</p>
+              </div>
+              <Link href="/admin/users">
+                <Button variant="outline" className="gap-2">
+                  <Users2 className="h-4 w-4" />
+                  Manage Admins
+                </Button>
+              </Link>
+            </div>
           </div>
-          <Button variant="outline" onClick={() => signOut({ callbackUrl: '/admin/login' })}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign Out
-          </Button>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
-        {/* Actions */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold">Sessions</h2>
-            <p className="text-sm text-muted-foreground">
-              {sessions?.length || 0} total session{sessions?.length !== 1 ? 's' : ''}
-            </p>
-          </div>
+        {/* Main Content */}
+        <div className="container mx-auto px-4 py-8 space-y-8">
+          {/* Stats */}
+          <DashboardStats />
+
+          <Tabs defaultValue="sessions" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="sessions">Sessions</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="sessions" className="space-y-4">
 
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -139,10 +156,9 @@ export default function AdminDashboard() {
               </form>
             </DialogContent>
           </Dialog>
-        </div>
 
-        {/* Sessions Grid */}
-        {sessions && sessions.length > 0 ? (
+          {/* Sessions Grid */}
+          {sessions && sessions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sessions.map((session) => (
               <Card key={session.id}>
@@ -257,7 +273,11 @@ export default function AdminDashboard() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
-    </div>
+    </AdminLayout>
   );
 }
+

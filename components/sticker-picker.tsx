@@ -45,19 +45,22 @@ export function StickerPicker({ onSelect }: StickerPickerProps) {
     },
   });
 
-  const handleSelect = (sticker: any) => {
+  const handleSelect = (sticker: string | StickerItem) => {
     if (typeof sticker === 'string') {
       // Emoji sticker
       onSelect(sticker);
     } else {
       // Image sticker
-      onSelect(sticker.filename || sticker.url, sticker.url);
+      onSelect(sticker.filename ?? sticker.url ?? '', sticker.url);
     }
     setOpen(false);
   };
 
   const stickerList = (stickers || DEFAULT_STICKERS) as (string | StickerItem)[];
-  const isEmoji = typeof stickerList[0] === 'string';
+  const cleanedStickers = stickerList.filter((item) =>
+    typeof item === 'string' ? item.length > 0 : Boolean(item?.url)
+  );
+  const isEmoji = cleanedStickers.length > 0 && typeof cleanedStickers[0] === 'string';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -70,7 +73,7 @@ export function StickerPicker({ onSelect }: StickerPickerProps) {
         <div className="space-y-2">
           <h3 className="font-semibold text-sm">Stickers</h3>
           <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto">
-            {stickerList.map((sticker: any, index: number) => (
+            {cleanedStickers.map((sticker: string | StickerItem, index: number) => (
               isEmoji ? (
                 <button
                   key={index}
@@ -86,6 +89,7 @@ export function StickerPicker({ onSelect }: StickerPickerProps) {
                   className="w-12 h-12 hover:bg-muted rounded p-1 transition transform hover:scale-110"
                   title={(sticker as StickerItem).filename}
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={(sticker as StickerItem).url || ''}
                     alt="sticker"

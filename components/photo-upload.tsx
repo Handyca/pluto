@@ -40,7 +40,7 @@ export function PhotoUpload({ onPhotoSelect, isLoading = false }: PhotoUploadPro
         onPhotoSelect(file, preview);
       };
       reader.readAsDataURL(file);
-    } catch (error) {
+    } catch {
       toast.error('Failed to read file');
     } finally {
       setLocalLoading(false);

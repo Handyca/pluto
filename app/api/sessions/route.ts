@@ -14,7 +14,7 @@ const createSessionSchema = z.object({
 });
 
 // GET /api/sessions - Get all sessions for admin
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 
@@ -60,9 +60,18 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth();
 
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Verify admin still exists in DB (guards against stale JWT)
+    const admin = await prisma.admin.findUnique({ where: { id: session.user.id } });
+    if (!admin) {
+      return NextResponse.json(
+        { success: false, error: 'Admin account not found. Please sign in again.' },
         { status: 401 }
       );
     }
@@ -71,7 +80,7 @@ export async function POST(request: NextRequest) {
     const validatedData = createSessionSchema.parse(body);
 
     // Generate unique session code
-    let code: string;
+    let code = '';
     let isUnique = false;
     let attempts = 0;
 
@@ -97,7 +106,7 @@ export async function POST(request: NextRequest) {
     const newSession = await prisma.session.create({
       data: {
         title: validatedData.title,
-        code: code!,
+        code: code,
         adminId: session.user.id,
         backgroundType: validatedData.backgroundType || 'color',
         backgroundUrl: validatedData.backgroundUrl,
@@ -129,7 +138,7 @@ export async function POST(request: NextRequest) {
 
     console.error('Error creating session:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create session' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to create session' },
       { status: 500 }
     );
   }

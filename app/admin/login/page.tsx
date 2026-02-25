@@ -12,8 +12,8 @@ import { toast } from 'sonner';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@pluto.local');
+  const [password, setPassword] = useState('admin123');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,7 +34,7 @@ export default function AdminLoginPage() {
         router.push('/admin');
         router.refresh();
       }
-    } catch (error) {
+    } catch {
       toast.error('An error occurred during login');
     } finally {
       setIsLoading(false);

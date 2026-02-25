@@ -82,6 +82,7 @@ export function SessionCodeDisplay({ code, joinUrl }: SessionCodeDisplayProps) {
           </DialogHeader>
           <div className="flex justify-center p-4">
             {qrCode && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={qrCode} alt="QR Code" className="w-full max-w-xs" />
             )}
           </div>

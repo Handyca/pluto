@@ -12,7 +12,6 @@
 import type { WebSocketManager } from '@/server/websocket';
 
 declare global {
-  // eslint-disable-next-line no-var
   var __wsManager: WebSocketManager | undefined;
 }
 

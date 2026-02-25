@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { EmojiPicker } from '@/components/emoji-picker';
-import { StickerPicker } from '@/components/sticker-picker';
 import { PhotoUpload } from '@/components/photo-upload';
 import { MessageBubble } from '@/components/message-bubble';
 import { WSMessageType, Message, MessageType } from '@/types';
@@ -30,6 +29,11 @@ interface StoredParticipantSession {
   expiresAt: number;
 }
 
+type LocalMessage = Message & {
+  optimistic?: boolean;
+  clientId?: string;
+};
+
 export default function JoinPage({
   params,
 }: {
@@ -40,7 +44,7 @@ export default function JoinPage({
   const [nickname, setNickname] = useState('');
   const [token, setToken] = useState('');
   const [participantName, setParticipantName] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -50,6 +54,28 @@ export default function JoinPage({
 
   const { data: sessionInfo, isLoading: loadingSession } = useSessionByCode(code);
   const joinMutation = useJoinSession();
+
+  const reconcileIncomingMessage = (incoming: Message) => {
+    setMessages((prev) => {
+      const matchIndex = prev.findIndex(
+        (msg) =>
+          msg.optimistic &&
+          msg.type === incoming.type &&
+          msg.participantName === incoming.participantName &&
+          msg.content === incoming.content &&
+          (incoming.imageUrl ? msg.imageUrl === incoming.imageUrl : true) &&
+          (incoming.stickerUrl ? msg.stickerUrl === incoming.stickerUrl : true)
+      );
+
+      if (matchIndex >= 0) {
+        const next = [...prev];
+        next[matchIndex] = incoming;
+        return next;
+      }
+
+      return [...prev, incoming];
+    });
+  };
 
   // WebSocket connection
   const [wsUrl] = useState(() => getWsUrl());
@@ -62,7 +88,7 @@ export default function JoinPage({
           break;
 
         case WSMessageType.NEW_MESSAGE:
-          setMessages((prev) => [...prev, wsMessage.payload]);
+          reconcileIncomingMessage(wsMessage.payload);
           break;
 
         case WSMessageType.MESSAGE_UPDATED:
@@ -103,6 +129,62 @@ export default function JoinPage({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storageKey = `${STORAGE_KEY_PREFIX}${code}`;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+
+      const stored = JSON.parse(raw) as StoredParticipantSession;
+      if (stored.sessionCode !== code) return;
+      if (stored.expiresAt && Date.now() > stored.expiresAt) {
+        localStorage.removeItem(storageKey);
+        return;
+      }
+
+      setToken(stored.token);
+      setParticipantName(stored.participantName);
+      setNickname(stored.participantName);
+      setJoined(true);
+    } catch {
+      localStorage.removeItem(storageKey);
+    }
+  }, [code]);
+
+  const addOptimisticMessage = (payload: {
+    type: MessageType;
+    content: string;
+    imageUrl?: string;
+    stickerUrl?: string;
+  }) => {
+    if (!sessionInfo?.id || !participantName) return;
+
+    const clientId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+
+    const optimisticMessage: LocalMessage = {
+      id: `optimistic-${clientId}`,
+      sessionId: sessionInfo.id,
+      participantName,
+      participantId: null,
+      type: payload.type,
+      content: payload.content,
+      imageUrl: payload.imageUrl ?? null,
+      stickerUrl: payload.stickerUrl ?? null,
+      isVisible: true,
+      isPinned: false,
+      createdAt: new Date(),
+      optimistic: true,
+      clientId,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+  };
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nickname.trim()) return;
@@ -117,6 +199,18 @@ export default function JoinPage({
       setToken(result.token);
       setParticipantName(nickname);
       setJoined(true);
+      if (typeof window !== 'undefined') {
+        const storageKey = `${STORAGE_KEY_PREFIX}${code}`;
+        const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+        const stored: StoredParticipantSession = {
+          token: result.token,
+          participantName: nickname,
+          anonymousId,
+          sessionCode: code,
+          expiresAt,
+        };
+        localStorage.setItem(storageKey, JSON.stringify(stored));
+      }
       toast.success('Joined successfully!');
     }
   };
@@ -127,6 +221,10 @@ export default function JoinPage({
 
     setIsSending(true);
     try {
+      addOptimisticMessage({
+        type: MessageType.TEXT,
+        content: messageInput.trim(),
+      });
       sendWsMessage({
         type: WSMessageType.SEND_MESSAGE,
         payload: {
@@ -138,7 +236,7 @@ export default function JoinPage({
       });
 
       setMessageInput('');
-    } catch (error) {
+    } catch {
       toast.error('Failed to send message');
     } finally {
       setIsSending(false);
@@ -147,18 +245,6 @@ export default function JoinPage({
 
   const handleEmojiSelect = (emoji: string) => {
     setMessageInput((prev) => prev + emoji);
-  };
-
-  const handleSendEmoji = (emoji: string) => {
-    sendWsMessage({
-      type: WSMessageType.SEND_MESSAGE,
-      payload: {
-        sessionId: sessionInfo?.id,
-        participantName,
-        type: MessageType.EMOJI,
-        content: emoji,
-      },
-    });
   };
 
   const handlePhotoSelect = (file: File, preview: string) => {
@@ -174,6 +260,9 @@ export default function JoinPage({
       const formData = new FormData();
       formData.append('file', selectedPhotoFile);
       formData.append('type', 'image');
+      if (token) {
+        formData.append('participantToken', token);
+      }
 
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -186,6 +275,12 @@ export default function JoinPage({
       }
 
       const result = await response.json();
+
+      addOptimisticMessage({
+        type: MessageType.IMAGE,
+        content: messageInput.trim(),
+        imageUrl: result.data.url,
+      });
 
       sendWsMessage({
         type: WSMessageType.SEND_MESSAGE,
@@ -205,42 +300,6 @@ export default function JoinPage({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to upload photo';
       toast.error(message);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handleSendSticker = async (sticker: string, stickerUrl?: string) => {
-    if (isSending) return;
-
-    setIsSending(true);
-    try {
-      if (stickerUrl) {
-        // Image sticker
-        sendWsMessage({
-          type: WSMessageType.SEND_MESSAGE,
-          payload: {
-            sessionId: sessionInfo?.id,
-            participantName,
-            type: MessageType.STICKER,
-            content: sticker,
-            stickerUrl,
-          },
-        });
-      } else {
-        // Emoji sticker
-        sendWsMessage({
-          type: WSMessageType.SEND_MESSAGE,
-          payload: {
-            sessionId: sessionInfo?.id,
-            participantName,
-            type: MessageType.EMOJI,
-            content: sticker,
-          },
-        });
-      }
-    } catch (error) {
-      toast.error('Failed to send sticker');
     } finally {
       setIsSending(false);
     }
@@ -382,6 +441,7 @@ export default function JoinPage({
           {/* Photo Preview */}
           {photoPreview && (
             <div className="mb-4 relative inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
                 src={photoPreview} 
                 alt="preview" 
@@ -396,41 +456,42 @@ export default function JoinPage({
             </div>
           )}
 
-          <form onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage} className="flex flex-col gap-2">
-            <Textarea
-              value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
-              className="resize-none min-h-[60px]"
-              maxLength={1000}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (photoPreview) {
-                    handleSendPhoto();
-                  } else {
-                    handleSendMessage(e);
-                  }
-                }
-              }}
-            />
-            <div className="flex gap-2 items-center">
+          <form
+            onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage}
+            className="flex items-end gap-2"
+          >
+            <div className="flex items-end gap-2 flex-1 border rounded-lg px-2 py-2 bg-background">
               <EmojiPicker onSelect={handleEmojiSelect} />
-              <StickerPicker onSelect={handleSendSticker} />
               <PhotoUpload onPhotoSelect={handlePhotoSelect} isLoading={isSending} />
-              <div className="flex-1" />
-              <Button 
-                type="submit" 
-                size="icon"
-                disabled={photoPreview ? isSending : (!messageInput.trim() || isSending)}
-              >
-                {isSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              <Textarea
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
+                className="flex-1 resize-none min-h-[44px] max-h-32 border-0 focus-visible:ring-0"
+                maxLength={1000}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (photoPreview) {
+                      handleSendPhoto();
+                    } else {
+                      handleSendMessage(e);
+                    }
+                  }
+                }}
+              />
             </div>
+            <Button
+              type="submit"
+              size="icon"
+              disabled={photoPreview ? isSending : (!messageInput.trim() || isSending)}
+            >
+              {isSending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
           </form>
           <p className="text-xs text-muted-foreground mt-2">
             {messageInput.length}/1000 characters • Press Enter to send, Shift+Enter for new line

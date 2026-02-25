@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Users, MessageSquare, Search, RefreshCw, Circle } from 'lucide-react';
+import { ArrowLeft, Users, MessageSquare, Search, RefreshCw, Circle, Download } from 'lucide-react';
 import Link from 'next/link';
 import { formatDistanceToNow, differenceInMinutes } from 'date-fns';
 import { generateAvatarColor, getInitials } from '@/lib/utils';
@@ -41,12 +41,45 @@ export default function ParticipantsPage({
   const { id } = use(params);
   const [search, setSearch] = useState('');
 
+  // ── CSV export ──────────────────────────────────────────────────────────
+  const exportCSV = (participants: Participant[], sessionTitle: string) => {
+    const header = ['Nickname', 'Anonymous ID', 'Status', 'Joined At', 'Last Seen', 'Messages'];
+    const rows = participants.map((p) => [
+      p.nickname,
+      p.anonymousId,
+      isOnline(p.lastSeenAt) ? 'Online' : 'Offline',
+      new Date(p.joinedAt).toLocaleString(),
+      new Date(p.lastSeenAt).toLocaleString(),
+      String(p._count.messages),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `participants-${sessionTitle.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['participants', id],
     queryFn: async () => {
       const res = await fetch(`/api/sessions/${id}/participants`);
+      if (!res.ok) {
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+          const error = await res.json();
+          errorMessage = error.error || error.message || errorMessage;
+        } catch {
+          errorMessage = res.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
       const body = await res.json();
-      if (!body.success) throw new Error(body.error);
+      if (!body.success) throw new Error(body.error || 'Failed to fetch participants');
       return body.data as { session: SessionInfo; participants: Participant[] };
     },
     refetchInterval: 30_000, // auto-refresh every 30 s
@@ -83,6 +116,16 @@ export default function ParticipantsPage({
               <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
                 {session.code}
               </code>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportCSV(participants, session.title)}
+                className="gap-1.5"
+                title="Export to CSV"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
               <Button
                 variant="outline"
                 size="icon"

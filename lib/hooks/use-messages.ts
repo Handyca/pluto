@@ -1,6 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Message, MessageType } from '@/types';
+import { Message } from '@/types';
 import { toast } from 'sonner';
+
+// Helper function to handle fetch errors
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
+  
+  if (!res.ok) {
+    let errorMessage = `HTTP ${res.status}`;
+    try {
+      const error = await res.json();
+      errorMessage = error.error || error.message || errorMessage;
+    } catch {
+      errorMessage = res.statusText || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await res.json();
+  return data;
+}
 
 // Fetch messages for a session
 export function useMessages(sessionId: string, token?: string) {
@@ -12,10 +31,9 @@ export function useMessages(sessionId: string, token?: string) {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`/api/messages?sessionId=${sessionId}`, { headers });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      return data.data as Message[];
+      const data = await fetchJSON<{ success: boolean; data: Message[] }>(`/api/messages?sessionId=${sessionId}`, { headers });
+      if (!data.success) throw new Error('Failed to fetch messages');
+      return data.data;
     },
     enabled: !!sessionId,
   });
@@ -27,13 +45,12 @@ export function useUpdateMessage() {
 
   return useMutation({
     mutationFn: async ({ messageId, sessionId, updates }: { messageId: string; sessionId: string; updates: { isVisible?: boolean; isPinned?: boolean } }) => {
-      const res = await fetch(`/api/messages/${messageId}`, {
+      const data = await fetchJSON<{ success: boolean; data: Message }>(`/api/messages/${messageId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error('Failed to update message');
       return { ...data.data, sessionId } as Message & { sessionId: string };
     },
     onSuccess: (data) => {
@@ -56,11 +73,10 @@ export function useDeleteMessage() {
 
   return useMutation({
     mutationFn: async ({ messageId, sessionId }: { messageId: string; sessionId: string }) => {
-      const res = await fetch(`/api/messages/${messageId}`, {
+      const data = await fetchJSON<{ success: boolean }>(`/api/messages/${messageId}`, {
         method: 'DELETE',
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error('Failed to delete message');
       return { messageId, sessionId };
     },
     onSuccess: ({ messageId, sessionId }) => {
@@ -81,17 +97,49 @@ export function useDeleteMessage() {
 export function useUploadFile() {
   return useMutation({
     mutationFn: async ({ file, type }: { file: File; type: 'image' | 'video' | 'sticker' }) => {
+      // Ensure file is fully loaded before creating FormData
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', type);
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      return data.data;
+      // Use a longer timeout for large files and ensure proper headers
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+          // Let the browser set Content-Type with boundary automatically
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          let errorMessage = 'Failed to upload file';
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            errorMessage = errorText || errorMessage;
+          }
+          throw new Error(errorMessage);
+        }
+        
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        return data.data;
+      } catch (error: unknown) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Upload timeout - file may be too large');
+        }
+        throw error;
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to upload file');
@@ -105,9 +153,8 @@ export function useMediaAssets(type?: 'IMAGE' | 'VIDEO' | 'STICKER') {
     queryKey: ['media', type],
     queryFn: async () => {
       const url = type ? `/api/upload?type=${type}` : '/api/upload';
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      const data = await fetchJSON<{ success: boolean; data: Record<string, unknown>[] }>(url);
+      if (!data.success) throw new Error('Failed to fetch media assets');
       return data.data;
     },
   });

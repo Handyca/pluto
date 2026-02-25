@@ -1,16 +1,16 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { useSessionByCode } from '@/lib/hooks/use-sessions';
 import { PageLoading } from '@/components/loading';
 import { VideoBackground } from '@/components/video-background';
 import { MessageBubble } from '@/components/message-bubble';
-import { SessionCodeDisplay } from '@/components/session-code-display';
 import { useWebSocket } from '@/lib/hooks/use-websocket';
 import { getWsUrl } from '@/lib/utils';
 import { WSMessageType, Message, ThemeConfig } from '@/types';
 import { AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
+import QRCodeLib from 'qrcode';
 
 export default function PresenterPage({
   params,
@@ -22,6 +22,9 @@ export default function PresenterPage({
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [backgroundType, setBackgroundType] = useState<string>('color');
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
+  const [joinUrl, setJoinUrl] = useState('');
+  const [qrCode, setQrCode] = useState('');
+  const didInitSessionRef = useRef(false);
   
   // Fetch session data
   const { data: sessionData, isLoading, error } = useSessionByCode(code);
@@ -71,21 +74,29 @@ export default function PresenterPage({
 
   // Join session via WebSocket
   useEffect(() => {
-    if (isConnected && sessionData) {
-      console.log('📡 Presenter joining session as admin:', code);
-      sendMessage({
-        type: WSMessageType.JOIN_SESSION,
-        payload: {
-          sessionCode: code,
-          isAdmin: true,
-        },
-      });
+    if (!isConnected || !sessionData) return;
+    if (didInitSessionRef.current) return;
 
-      setThemeConfig(sessionData.themeConfig as ThemeConfig);
-      setBackgroundType(sessionData.backgroundType);
-      setBackgroundUrl(sessionData.backgroundUrl);
-    }
+    didInitSessionRef.current = true;
+    console.log('📡 Presenter joining session as admin:', code);
+    sendMessage({
+      type: WSMessageType.JOIN_SESSION,
+      payload: {
+        sessionCode: code,
+        isAdmin: true,
+      },
+    });
+
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setThemeConfig(sessionData.themeConfig as unknown as ThemeConfig);
+    setBackgroundType(sessionData.backgroundType);
+    setBackgroundUrl(sessionData.backgroundUrl);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [isConnected, sessionData, code, sendMessage]);
+
+  useEffect(() => {
+    didInitSessionRef.current = false;
+  }, [code]);
 
   // Apply theme to CSS variables (--primary overrides Tailwind so all
   // text-primary / bg-primary / border-primary utilities match the theme).
@@ -104,6 +115,35 @@ export default function PresenterPage({
     }
   }, [themeConfig]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = `${window.location.origin}/join/${code}`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setJoinUrl(url);
+    QRCodeLib.toDataURL(url, {
+      width: 180,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    }).then(setQrCode);
+  }, [code]);
+
+  // Derived state — must be computed before any early returns to satisfy Rules of Hooks.
+  const visibleMessages = messages.filter((msg) => msg.isVisible);
+  const pinnedMessages = visibleMessages.filter((msg) => msg.isPinned);
+  const regularMessages = visibleMessages.filter((msg) => !msg.isPinned);
+
+  const chatPosition = themeConfig?.chatPosition || 'right';
+  const showTitle = themeConfig?.showTitle !== false;
+  const chatPositionClasses = {
+    right: 'right-0 top-0 bottom-0 w-96',
+    left: 'left-0 top-0 bottom-0 w-96',
+    bottom: 'bottom-0 left-0 right-0 h-80',
+  };
+
+  // Early returns after all hooks are called.
   if (isLoading) {
     return <PageLoading />;
   }
@@ -120,17 +160,6 @@ export default function PresenterPage({
       </div>
     );
   }
-
-  const visibleMessages = messages.filter((msg) => msg.isVisible);
-  const pinnedMessages = visibleMessages.filter((msg) => msg.isPinned);
-  const regularMessages = visibleMessages.filter((msg) => !msg.isPinned);
-
-  const chatPosition = themeConfig?.chatPosition || 'right';
-  const chatPositionClasses = {
-    right: 'right-0 top-0 bottom-0 w-96',
-    left: 'left-0 top-0 bottom-0 w-96',
-    bottom: 'bottom-0 left-0 right-0 h-80',
-  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ 
@@ -156,27 +185,19 @@ export default function PresenterPage({
       </div>
 
       {/* Session Info - Top Left */}
-      <div className="absolute top-4 left-4 z-10">
-        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 max-w-sm">
-          <h1 className="text-2xl font-bold mb-2">{sessionData.title}</h1>
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-sm">{isConnected ? 'Live' : 'Disconnected'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Session Code - Top Right (if not overlapping with chat) */}
-      {chatPosition !== 'right' && (
-        <div className="absolute top-4 right-4 z-10">
-          <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4">
-            <div className="text-center">
-              <p className="text-sm text-gray-300 mb-1">Join at</p>
-              <code className="text-2xl font-bold">{code}</code>
+      {showTitle && (
+        <div className="absolute top-4 left-4 z-10">
+          <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 max-w-sm">
+            <h1 className="text-2xl font-bold mb-2">{sessionData.title}</h1>
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-sm">{isConnected ? 'Live' : 'Disconnected'}</span>
             </div>
           </div>
         </div>
       )}
+
+      {/* Session Code has been merged into the QR panel at bottom-left */}
 
       {/* Chat Overlay */}
       <div 
@@ -223,6 +244,23 @@ export default function PresenterPage({
           )}
         </div>
       </div>
+
+      {/* Join QR Code + Session Code - Bottom Left */}
+      {qrCode && (
+        <div className="absolute bottom-4 left-4 z-10">
+          <div className="bg-black/60 backdrop-blur-sm rounded-xl p-4 flex flex-col items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrCode} alt="Join QR" className="w-32 h-32 rounded" />
+            <div className="text-center">
+              <p className="text-xs text-gray-300">or join with code</p>
+              <code className="text-2xl font-bold tracking-widest text-white">{code}</code>
+            </div>
+            <p className="text-xs text-gray-400 truncate max-w-[9rem]">
+              {joinUrl.replace(/^https?:\/\//, '')}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,8 +3,8 @@ import { IncomingMessage } from 'http';
 import { WSMessage, WSMessageType } from '@/types';
 import { prisma } from '@/lib/prisma';
 import { verifyParticipantToken } from '@/lib/participant-auth';
+import { MessageType } from '@prisma/client';
 
-const WS_PORT = parseInt(process.env.WS_PORT || '3001', 10);
 
 interface ExtendedWebSocket extends WebSocket {
   isAlive: boolean;
@@ -100,9 +100,11 @@ export class WebSocketManager {
     }
   }
 
-  private async handleJoinSession(ws: ExtendedWebSocket, payload: any) {
+  private async handleJoinSession(ws: ExtendedWebSocket, payload: Record<string, unknown>) {
     try {
-      const { sessionCode, token, isAdmin } = payload;
+      const sessionCode = payload.sessionCode as string | undefined;
+      const token = payload.token as string | undefined;
+      const isAdmin = payload.isAdmin as boolean | undefined;
       console.log(`🔐 JOIN_SESSION: sessionCode=${sessionCode}, isAdmin=${isAdmin}, hasToken=${!!token}`);
 
       // Verify session exists
@@ -120,7 +122,7 @@ export class WebSocketManager {
 
       // Verify token if participant
       if (!isAdmin && token) {
-        const participantData = await verifyParticipantToken(token);
+        const participantData = await verifyParticipantToken(token as string);
         if (!participantData) {
           console.error(`❌ Invalid participant token`);
           this.sendError(ws, 'Invalid token');
@@ -158,14 +160,18 @@ export class WebSocketManager {
     }
   }
 
-  private async handleSendMessage(ws: ExtendedWebSocket, payload: any) {
+  private async handleSendMessage(ws: ExtendedWebSocket, payload: Record<string, unknown>) {
     try {
       if (!ws.sessionId) {
         this.sendError(ws, 'Not in a session');
         return;
       }
 
-      const { participantName, type, content, imageUrl, stickerUrl } = payload;
+      const participantName = payload.participantName as string;
+      const type = payload.type as MessageType;
+      const content = payload.content as string;
+      const imageUrl = payload.imageUrl as string | undefined;
+      const stickerUrl = payload.stickerUrl as string | undefined;
 
       // Create message in database
       const message = await prisma.message.create({
@@ -175,8 +181,8 @@ export class WebSocketManager {
           participantName,
           type,
           content,
-          imageUrl,
-          stickerUrl,
+          imageUrl: imageUrl ?? null,
+          stickerUrl: stickerUrl ?? null,
         },
       });
 
@@ -193,7 +199,7 @@ export class WebSocketManager {
     }
   }
 
-  public broadcastMessageUpdate(sessionId: string, messageId: string, updates: any) {
+  public broadcastMessageUpdate(sessionId: string, messageId: string, updates: { isVisible?: boolean; isPinned?: boolean }) {
     this.broadcastToRoom(sessionId, {
       type: WSMessageType.MESSAGE_UPDATED,
       payload: { messageId, ...updates },
@@ -214,7 +220,7 @@ export class WebSocketManager {
     });
   }
 
-  public broadcastThemeUpdate(sessionId: string, themeConfig: any) {
+  public broadcastThemeUpdate(sessionId: string, themeConfig: unknown) {
     this.broadcastToRoom(sessionId, {
       type: WSMessageType.THEME_UPDATED,
       payload: { themeConfig },
@@ -285,6 +291,20 @@ export class WebSocketManager {
         extWs.ping();
       });
     }, 30000); // 30 seconds
+  }
+
+  public getStats() {
+    const rooms: { sessionId: string; clients: number; admins: number }[] = [];
+    this.rooms.forEach((room, sessionId) => {
+      let admins = 0;
+      room.clients.forEach((c) => { if (c.isAdmin) admins++; });
+      rooms.push({ sessionId, clients: room.clients.size, admins });
+    });
+    return {
+      totalConnections: this.wss.clients.size,
+      activeRooms: this.rooms.size,
+      rooms,
+    };
   }
 
   public stop() {

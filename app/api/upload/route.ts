@@ -3,27 +3,76 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { isValidImageType, isValidVideoType } from '@/lib/utils';
+import { isValidImageType, isValidVideoType, resolveFileMime } from '@/lib/utils';
+import { verifyParticipantToken } from '@/lib/participant-auth';
+import { MediaType } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
 const MAX_IMAGE_SIZE = 30 * 1024 * 1024; // 30MB
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB (increased for better video support)
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session?.user) {
+    const contentType = request.headers.get('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error: 'Invalid content type (expected multipart/form-data)' },
+        { status: 415 }
+      );
+    }
+    if (!contentType.includes('boundary=')) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid multipart form data (missing boundary)' },
+        { status: 400 }
       );
     }
 
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (error: unknown) {
+      console.error('FormData parsing error:', error);
+      
+      // Provide more specific error messages
+      const errMsg = error instanceof Error ? error.message : '';
+      let message = 'Invalid multipart form data';
+      if (errMsg.includes('boundary')) {
+        message = 'Missing final boundary in multipart form data. File may be too large or upload was interrupted.';
+      } else if (errMsg.includes('unexpected end')) {
+        message = 'Upload was interrupted before completion. Please try again.';
+      } else {
+        message = errMsg || message;
+      }
+      
+      return NextResponse.json(
+        { success: false, error: message },
+        { status: 400 }
+      );
+    }
     const file = formData.get('file') as File | null;
     const type = formData.get('type') as string; // 'image', 'video', 'sticker'
+    const participantToken = formData.get('participantToken') as string | null;
+
+    const session = await auth();
+    let participant = null;
+    if (!session?.user) {
+      if (participantToken) {
+        participant = await verifyParticipantToken(participantToken);
+      }
+      if (!participant) {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
+      if (type !== 'image') {
+        return NextResponse.json(
+          { success: false, error: 'Participants can only upload images' },
+          { status: 403 }
+        );
+      }
+    }
 
     if (!file) {
       return NextResponse.json(
@@ -32,9 +81,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    const isImage = isValidImageType(file.type);
-    const isVideo = isValidVideoType(file.type);
+    // Validate file type — fall back to extension when file.type is empty
+    const resolvedMime = resolveFileMime(file);
+    const isImage = isValidImageType(resolvedMime);
+    const isVideo = isValidVideoType(resolvedMime);
 
     if (type === 'image' && !isImage) {
       return NextResponse.json(
@@ -60,7 +110,7 @@ export async function POST(request: NextRequest) {
 
     if (isVideo && file.size > MAX_VIDEO_SIZE) {
       return NextResponse.json(
-        { success: false, error: 'Video file too large (max 50MB)' },
+        { success: false, error: 'Video file too large (max 100MB)' },
         { status: 400 }
       );
     }
@@ -85,9 +135,9 @@ export async function POST(request: NextRequest) {
         type: type === 'image' ? 'IMAGE' : type === 'video' ? 'VIDEO' : 'STICKER',
         url: `/uploads/${type}/${filename}`,
         filename,
-        mimeType: file.type,
+        mimeType: resolvedMime || file.type,
         size: file.size,
-        uploadedBy: session.user?.id ?? null,
+        uploadedBy: session?.user?.id ?? null,
       },
     });
 
@@ -116,20 +166,21 @@ export async function POST(request: NextRequest) {
 // GET /api/upload - Get all media assets
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type'); // Optional filter by type
 
+    const session = await auth();
+    if (!session?.user) {
+      if (!type || type.toUpperCase() !== 'STICKER') {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
+    }
+
     const mediaAssets = await prisma.mediaAsset.findMany({
-      where: type ? { type: type.toUpperCase() as any } : undefined,
+      where: type ? { type: type.toUpperCase() as MediaType } : undefined,
       orderBy: { createdAt: 'desc' },
     });
 
