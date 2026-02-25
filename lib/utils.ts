@@ -42,19 +42,20 @@ export function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-// Generate a consistent color for an avatar based on the name
+// Generate a consistent colour for an avatar based on the name.
+// Returns a hex colour string suitable for use as a CSS value (e.g. style={{ backgroundColor }}).
 export function generateAvatarColor(name: string): string {
   const colors = [
-    'bg-blue-500',
-    'bg-purple-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-pink-500',
-    'bg-indigo-500',
-    'bg-red-500',
-    'bg-orange-500',
-    'bg-teal-500',
-    'bg-cyan-500',
+    '#3b82f6', // blue-500
+    '#a855f7', // purple-500
+    '#22c55e', // green-500
+    '#eab308', // yellow-500
+    '#ec4899', // pink-500
+    '#6366f1', // indigo-500
+    '#ef4444', // red-500
+    '#f97316', // orange-500
+    '#14b8a6', // teal-500
+    '#06b6d4', // cyan-500
   ];
   
   let hash = 0;

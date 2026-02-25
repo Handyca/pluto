@@ -21,6 +21,8 @@ import {
   Loader2,
   Wifi,
   WifiOff,
+  Users,
+  ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -546,48 +548,103 @@ export default function SessionManagePage({
                       </Select>
                     </div>
 
-                    {/* Live preview */}
+                    {/* Live preview — faithful 16:9 replica of the actual presenter view */}
                     <div className="space-y-2">
                       <Label>Live Preview</Label>
+                      <p className="text-xs text-muted-foreground">
+                        This is exactly how the presenter screen will look.
+                      </p>
+                    </div>
+                    <div
+                      className="relative w-full overflow-hidden rounded-lg border"
+                      style={{ aspectRatio: '16/9', background: themeConfig.background }}
+                    >
+                      {/* Background image */}
+                      {(backgroundType === 'image' || backgroundType === 'video') && backgroundUrl && (
+                        <img
+                          src={backgroundUrl}
+                          alt="Background"
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      )}
+
+                      {/* Session info — top left */}
+                      <div className="absolute top-[8%] left-[2%] z-10">
+                        <div
+                          className="bg-black/50 rounded p-[4px_8px] max-w-[35%]"
+                          style={{ color: themeConfig.text, fontFamily: themeConfig.fontFamily }}
+                        >
+                          <p className="text-[9px] font-bold leading-tight truncate">
+                            {title || session.title}
+                          </p>
+                          <div className="flex items-center gap-1 mt-[2px]">
+                            <div className="h-[5px] w-[5px] rounded-full bg-green-400" />
+                            <span className="text-[7px] opacity-80">Live</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Join code — top right (only when chat is not on the right) */}
+                      {themeConfig.chatPosition !== 'right' && (
+                        <div className="absolute top-[8%] right-[2%] z-10">
+                          <div
+                            className="bg-black/50 rounded p-[4px_8px] text-center"
+                            style={{ color: themeConfig.text }}
+                          >
+                            <p className="text-[7px] opacity-70">Join at</p>
+                            <code className="text-[10px] font-bold">{session.code}</code>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Chat panel */}
                       <div
-                        className="rounded-lg overflow-hidden border"
+                        className={`absolute flex flex-col ${
+                          themeConfig.chatPosition === 'right'
+                            ? 'right-0 top-0 bottom-0 w-[28%]'
+                            : themeConfig.chatPosition === 'left'
+                            ? 'left-0 top-0 bottom-0 w-[28%]'
+                            : 'bottom-0 left-0 right-0 h-[38%]'
+                        }`}
                         style={{
-                          background: themeConfig.background,
-                          color: themeConfig.text,
+                          background: buildOverlay(overlayColor, overlayOpacity),
                           fontFamily: themeConfig.fontFamily,
-                          fontSize: `${themeConfig.fontSize}px`,
-                          minHeight: '120px',
+                          color: themeConfig.text,
                         }}
                       >
-                        <div
-                          className="p-3 h-full"
-                          style={{ background: buildOverlay(overlayColor, overlayOpacity) }}
-                        >
-                          <p className="text-xs font-semibold mb-2 opacity-70">Chat preview</p>
-                          <div className="space-y-2">
-                            {[
-                              { name: 'Alice', text: 'Hello everyone! 👋' },
-                              { name: 'Bob', text: 'Great presentation!' },
-                            ].map((msg) => (
-                              <div key={msg.name} className="flex items-start gap-2">
-                                <div
-                                  className="h-6 w-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold"
-                                  style={{ background: themeConfig.primary, color: '#fff' }}
-                                >
-                                  {msg.name[0]}
-                                </div>
-                                <div>
-                                  <span
-                                    className="text-xs font-semibold"
-                                    style={{ color: themeConfig.primary }}
-                                  >
-                                    {msg.name}
-                                  </span>
-                                  <p className="text-xs opacity-90">{msg.text}</p>
-                                </div>
+                        {/* Chat header */}
+                        <div className="px-2 py-1 border-b border-white/10">
+                          <p className="text-[8px] font-bold">Chat</p>
+                          <p className="text-[7px] opacity-60">3 messages</p>
+                        </div>
+
+                        {/* Sample messages */}
+                        <div className="flex-1 overflow-hidden p-1.5 space-y-1.5">
+                          {[
+                            { name: 'Alice', text: 'Hello everyone! 👋' },
+                            { name: 'Bob', text: 'Great presentation!' },
+                            { name: 'Carol', text: 'Love the theme ✨' },
+                          ].map((msg) => (
+                            <div key={msg.name} className="flex items-start gap-1">
+                              <div
+                                className="h-[14px] w-[14px] rounded-full flex-shrink-0 flex items-center justify-center text-[6px] font-bold text-white"
+                                style={{ background: themeConfig.primary }}
+                              >
+                                {msg.name[0]}
                               </div>
-                            ))}
-                          </div>
+                              <div>
+                                <span
+                                  className="text-[7px] font-semibold leading-none block"
+                                  style={{ color: themeConfig.primary }}
+                                >
+                                  {msg.name}
+                                </span>
+                                <p className="text-[7px] leading-tight opacity-90 mt-[1px]">
+                                  {msg.text}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -631,6 +688,15 @@ export default function SessionManagePage({
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Status</span>
                   <span className="font-medium">{session.isActive ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div className="pt-2">
+                  <Link href={`/admin/sessions/${id}/participants`}>
+                    <Button variant="outline" size="sm" className="w-full gap-2">
+                      <Users className="h-3.5 w-3.5" />
+                      View Participants
+                      <ExternalLink className="h-3 w-3 ml-auto" />
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>

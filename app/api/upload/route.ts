@@ -4,7 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { isValidImageType, isValidVideoType } from '@/lib/utils';
-import { nanoid } from 'nanoid';
 
 export const runtime = 'nodejs';
 
@@ -66,9 +65,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique filename
-    const ext = file.name.split('.').pop();
-    const filename = `${nanoid()}.${ext}`;
+    // Generate unique filename — use built-in crypto so there is no ESM dep.
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
+    const filename = `${crypto.randomUUID()}.${ext}`;
     const uploadDir = join(process.cwd(), 'public', 'uploads', type);
     
     // Ensure upload directory exists
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
         filename,
         mimeType: file.type,
         size: file.size,
-        uploadedBy: session.user.id,
+        uploadedBy: session.user?.id ?? null,
       },
     });
 
@@ -104,9 +103,11 @@ export async function POST(request: NextRequest) {
       message: 'File uploaded successfully',
     });
   } catch (error) {
-    console.error('Error uploading file:', error);
+    // Surface the real error message so the client toast is informative.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Error uploading file:', message, error);
     return NextResponse.json(
-      { success: false, error: 'Failed to upload file' },
+      { success: false, error: message || 'Failed to upload file' },
       { status: 500 }
     );
   }
