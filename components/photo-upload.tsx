@@ -24,9 +24,10 @@ export function PhotoUpload({ onPhotoSelect, isLoading = false }: PhotoUploadPro
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size must be less than 5MB');
+    // Validate file size (max 30MB)
+    const maxSizeMB = 30;
+    if (file.size > maxSizeMB * 1024 * 1024) {
+      toast.error(`Image size must be less than ${maxSizeMB}MB`);
       return;
     }
 

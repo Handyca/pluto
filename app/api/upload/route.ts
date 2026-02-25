@@ -7,7 +7,7 @@ import { isValidImageType, isValidVideoType } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGE_SIZE = 30 * 1024 * 1024; // 30MB
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
 export async function POST(request: NextRequest) {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // Validate file size
     if (isImage && file.size > MAX_IMAGE_SIZE) {
       return NextResponse.json(
-        { success: false, error: 'Image file too large (max 5MB)' },
+        { success: false, error: 'Image file too large (max 30MB)' },
         { status: 400 }
       );
     }

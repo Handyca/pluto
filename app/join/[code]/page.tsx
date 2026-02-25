@@ -396,30 +396,29 @@ export default function JoinPage({
             </div>
           )}
 
-          <form onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage} className="flex gap-2">
-            <div className="flex-1 flex gap-2 flex-col">
-              <Textarea
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
-                className="resize-none min-h-[60px]"
-                maxLength={1000}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (photoPreview) {
-                      handleSendPhoto();
-                    } else {
-                      handleSendMessage(e);
-                    }
+          <form onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage} className="flex flex-col gap-2">
+            <Textarea
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+              placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
+              className="resize-none min-h-[60px]"
+              maxLength={1000}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (photoPreview) {
+                    handleSendPhoto();
+                  } else {
+                    handleSendMessage(e);
                   }
-                }}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
+                }
+              }}
+            />
+            <div className="flex gap-2 items-center">
               <EmojiPicker onSelect={handleEmojiSelect} />
               <StickerPicker onSelect={handleSendSticker} />
               <PhotoUpload onPhotoSelect={handlePhotoSelect} isLoading={isSending} />
+              <div className="flex-1" />
               <Button 
                 type="submit" 
                 size="icon"
