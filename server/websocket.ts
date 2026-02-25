@@ -44,7 +44,9 @@ export class WebSocketManager {
     console.log(`🚀 WebSocket handler initializing on ${addr}`);
 
     this.wss.on('connection', (ws: ExtendedWebSocket, request: IncomingMessage) => {
-      console.log('📡 New WebSocket connection');
+      console.log('📡 New WebSocket connection received');
+      const clientIp = request.socket.remoteAddress;
+      console.log(`   Client: ${clientIp}`);
       
       ws.isAlive = true;
 
@@ -55,6 +57,7 @@ export class WebSocketManager {
       ws.on('message', async (data: Buffer) => {
         try {
           const message: WSMessage = JSON.parse(data.toString());
+          console.log(`📨 WebSocket message received:`, message.type);
           await this.handleMessage(ws, message);
         } catch (error) {
           console.error('❌ Error handling WebSocket message:', error);
@@ -100,6 +103,7 @@ export class WebSocketManager {
   private async handleJoinSession(ws: ExtendedWebSocket, payload: any) {
     try {
       const { sessionCode, token, isAdmin } = payload;
+      console.log(`🔐 JOIN_SESSION: sessionCode=${sessionCode}, isAdmin=${isAdmin}, hasToken=${!!token}`);
 
       // Verify session exists
       const session = await prisma.session.findUnique({
@@ -108,18 +112,22 @@ export class WebSocketManager {
       });
 
       if (!session) {
+        console.error(`❌ Session not found: ${sessionCode}`);
         this.sendError(ws, 'Session not found');
         return;
       }
+      console.log(`✅ Session found: ${session.title} (ID: ${session.id})`);
 
       // Verify token if participant
       if (!isAdmin && token) {
         const participantData = await verifyParticipantToken(token);
         if (!participantData) {
+          console.error(`❌ Invalid participant token`);
           this.sendError(ws, 'Invalid token');
           return;
         }
         ws.participantId = participantData.participantId;
+        console.log(`✅ Participant verified: ${participantData.participantName}`);
       }
 
       // Add to room

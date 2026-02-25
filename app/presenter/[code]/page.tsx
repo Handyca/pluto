@@ -72,11 +72,12 @@ export default function PresenterPage({
   // Join session via WebSocket
   useEffect(() => {
     if (isConnected && sessionData) {
+      console.log('📡 Presenter joining session as admin:', code);
       sendMessage({
         type: WSMessageType.JOIN_SESSION,
         payload: {
           sessionCode: code,
-          isAdmin: false,
+          isAdmin: true,
         },
       });
 

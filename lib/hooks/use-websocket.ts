@@ -51,6 +51,7 @@ export function useWebSocket({
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setIsConnecting(true);
+    console.log(`🔗 Attempting WebSocket connection (${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts + 1}): ${url}`);
 
     try {
       const ws = new WebSocket(url);
@@ -93,10 +94,11 @@ export function useWebSocket({
         }
       };
 
-      ws.onerror = () => {
-        console.warn(`⚠️ WebSocket connection failed (${url}). Is the WS server running? Start with: bun run dev`);
+      ws.onerror = (event) => {
+        console.warn(`⚠️ WebSocket connection error (${url}). Is the WS server running? Start with: bun run dev`);
+        console.warn('Error details:', event);
         setIsConnecting(false);
-        onErrorRef.current?.(new Event('error'));
+        onErrorRef.current?.(event);
       };
 
       wsRef.current = ws;
@@ -138,6 +140,8 @@ export function useWebSocket({
 
   useEffect(() => {
     if (typeof window === 'undefined') return; // SSR guard
+    
+    console.log(`🔧 useWebSocket initialized with URL: ${url}`);
     connect();
 
     return () => {

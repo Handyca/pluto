@@ -10,12 +10,25 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { EmojiPicker } from '@/components/emoji-picker';
+import { StickerPicker } from '@/components/sticker-picker';
+import { PhotoUpload } from '@/components/photo-upload';
 import { MessageBubble } from '@/components/message-bubble';
 import { WSMessageType, Message, MessageType } from '@/types';
-import { Send, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Send, Loader2, X } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { generateAnonymousId, getWsUrl } from '@/lib/utils';
+
+// LocalStorage keys
+const STORAGE_KEY_PREFIX = 'pluto_participant_';
+
+interface StoredParticipantSession {
+  token: string;
+  participantName: string;
+  anonymousId: string;
+  sessionCode: string;
+  expiresAt: number;
+}
 
 export default function JoinPage({
   params,
@@ -30,6 +43,8 @@ export default function JoinPage({
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [anonymousId] = useState(() => generateAnonymousId());
 
@@ -144,6 +159,96 @@ export default function JoinPage({
         content: emoji,
       },
     });
+  };
+
+  const handlePhotoSelect = (file: File, preview: string) => {
+    setSelectedPhotoFile(file);
+    setPhotoPreview(preview);
+  };
+
+  const handleSendPhoto = async () => {
+    if (!selectedPhotoFile || isSending) return;
+
+    setIsSending(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedPhotoFile);
+      formData.append('type', 'image');
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to upload image');
+      }
+
+      const result = await response.json();
+
+      sendWsMessage({
+        type: WSMessageType.SEND_MESSAGE,
+        payload: {
+          sessionId: sessionInfo?.id,
+          participantName,
+          type: MessageType.IMAGE,
+          content: messageInput.trim(),
+          imageUrl: result.data.url,
+        },
+      });
+
+      setMessageInput('');
+      setPhotoPreview(null);
+      setSelectedPhotoFile(null);
+      toast.success('Photo sent!');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to upload photo';
+      toast.error(message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSendSticker = async (sticker: string, stickerUrl?: string) => {
+    if (isSending) return;
+
+    setIsSending(true);
+    try {
+      if (stickerUrl) {
+        // Image sticker
+        sendWsMessage({
+          type: WSMessageType.SEND_MESSAGE,
+          payload: {
+            sessionId: sessionInfo?.id,
+            participantName,
+            type: MessageType.STICKER,
+            content: sticker,
+            stickerUrl,
+          },
+        });
+      } else {
+        // Emoji sticker
+        sendWsMessage({
+          type: WSMessageType.SEND_MESSAGE,
+          payload: {
+            sessionId: sessionInfo?.id,
+            participantName,
+            type: MessageType.EMOJI,
+            content: sticker,
+          },
+        });
+      }
+    } catch (error) {
+      toast.error('Failed to send sticker');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const clearPhotoPreview = () => {
+    setPhotoPreview(null);
+    setSelectedPhotoFile(null);
   };
 
   if (loadingSession) {
@@ -274,28 +379,51 @@ export default function JoinPage({
       {/* Input */}
       <div className="border-t bg-card p-4">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <div className="flex-1 flex gap-2">
+          {/* Photo Preview */}
+          {photoPreview && (
+            <div className="mb-4 relative inline-block">
+              <img 
+                src={photoPreview} 
+                alt="preview" 
+                className="max-w-xs max-h-48 rounded-lg border" 
+              />
+              <button
+                onClick={clearPhotoPreview}
+                className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1 hover:bg-destructive/90"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <form onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage} className="flex gap-2">
+            <div className="flex-1 flex gap-2 flex-col">
               <Textarea
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
-                placeholder="Type your message..."
+                placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
                 className="resize-none min-h-[60px]"
                 maxLength={1000}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendMessage(e);
+                    if (photoPreview) {
+                      handleSendPhoto();
+                    } else {
+                      handleSendMessage(e);
+                    }
                   }
                 }}
               />
             </div>
             <div className="flex flex-col gap-2">
               <EmojiPicker onSelect={handleEmojiSelect} />
+              <StickerPicker onSelect={handleSendSticker} />
+              <PhotoUpload onPhotoSelect={handlePhotoSelect} isLoading={isSending} />
               <Button 
                 type="submit" 
                 size="icon"
-                disabled={!messageInput.trim() || isSending}
+                disabled={photoPreview ? isSending : (!messageInput.trim() || isSending)}
               >
                 {isSending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

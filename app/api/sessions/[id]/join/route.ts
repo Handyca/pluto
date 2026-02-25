@@ -82,7 +82,8 @@ export async function POST(
       anonymousId
     );
 
-    return NextResponse.json({
+    // Create response with session data
+    const response = NextResponse.json({
       success: true,
       data: {
         session: {
@@ -102,6 +103,26 @@ export async function POST(
       },
       message: 'Joined session successfully',
     });
+
+    // Set token as httpOnly cookie (expires in 24 hours to match token expiry)
+    response.cookies.set('participant_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24, // 24 hours in seconds
+      path: '/',
+    });
+
+    // Also set session code cookie for easier lookup
+    response.cookies.set('participant_session_code', session.code, {
+      httpOnly: false, // Allow client-side access for navigation
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24, // 24 hours
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

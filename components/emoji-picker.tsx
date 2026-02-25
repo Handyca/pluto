@@ -8,13 +8,7 @@ import {
 } from '@/components/ui/popover';
 import { Smile } from 'lucide-react';
 import { useState } from 'react';
-
-const EMOJI_CATEGORIES = {
-  Smileys: ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳'],
-  Gestures: ['👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘', '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '👋', '🤚', '🖐️', '✋', '🖖', '👏', '🙌', '🤲', '🤝', '🙏'],
-  Hearts: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '❤️‍🩹', '💕', '💖', '💗', '💓', '💞', '💝', '💘'],
-  Symbols: ['🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🥈', '🥉', '⭐', '🌟', '✨', '💫', '🔥', '💯', '✅', '❌', '⚠️', '📢', '💬', '💭'],
-};
+import EmojiPickerLibrary, { Theme } from 'emoji-picker-react';
 
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void;
@@ -22,47 +16,28 @@ interface EmojiPickerProps {
 
 export function EmojiPicker({ onSelect }: EmojiPickerProps) {
   const [open, setOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<keyof typeof EMOJI_CATEGORIES>('Smileys');
 
-  const handleSelect = (emoji: string) => {
-    onSelect(emoji);
+  const handleSelect = (emojiData: any) => {
+    onSelect(emojiData.emoji);
     setOpen(false);
   };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" type="button">
+        <Button variant="ghost" size="icon" type="button" title="Add emoji">
           <Smile className="h-5 w-5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-2" align="end">
-        <div className="space-y-2">
-          <div className="flex gap-1 border-b pb-2">
-            {Object.keys(EMOJI_CATEGORIES).map((category) => (
-              <Button
-                key={category}
-                variant={activeCategory === category ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveCategory(category as keyof typeof EMOJI_CATEGORIES)}
-                className="text-xs"
-              >
-                {category}
-              </Button>
-            ))}
-          </div>
-          <div className="grid grid-cols-8 gap-1 max-h-64 overflow-y-auto">
-            {EMOJI_CATEGORIES[activeCategory].map((emoji, index) => (
-              <button
-                key={index}
-                onClick={() => handleSelect(emoji)}
-                className="text-2xl hover:bg-muted rounded p-1 transition"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
+      <PopoverContent className="w-fit p-0" align="end">
+        <EmojiPickerLibrary 
+          onEmojiClick={handleSelect}
+          theme={Theme.DARK}
+          height={400}
+          width={350}
+          previewConfig={{ showPreview: false }}
+          searchPlaceHolder="Search emojis..."
+        />
       </PopoverContent>
     </Popover>
   );
