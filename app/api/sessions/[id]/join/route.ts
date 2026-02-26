@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { generateAnonymousId } from '@/lib/utils';
 import { createParticipantToken } from '@/lib/participant-auth';
 import { z } from 'zod';
+import { joinLimiter, getClientIp } from '@/lib/rate-limit';
 export const runtime = 'nodejs';
 const joinSchema = z.object({
   participantName: z.string().min(1).max(50),
@@ -16,6 +17,16 @@ export async function POST(
 ) {
   try {
     const { id: code } = await params;
+
+    // Rate limit: 20 join attempts per minute per IP.
+    const ip = getClientIp(request);
+    if (joinLimiter.isRateLimited(ip)) {
+      return NextResponse.json(
+        { success: false, error: 'Too many requests — please try again later' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { participantName, anonymousId: providedAnonymousId } = joinSchema.parse(body);
 
@@ -154,6 +165,9 @@ export async function GET(
         title: true,
         code: true,
         isActive: true,
+        backgroundType: true,
+        backgroundUrl: true,
+        themeConfig: true,
         _count: {
           select: { participants: true },
         },

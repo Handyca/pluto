@@ -9,6 +9,7 @@ import {
 import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import Image from 'next/image';
 
 const DEFAULT_STICKERS = [
   '🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🥈', '🥉',
@@ -76,7 +77,7 @@ export function StickerPicker({ onSelect }: StickerPickerProps) {
             {cleanedStickers.map((sticker: string | StickerItem, index: number) => (
               isEmoji ? (
                 <button
-                  key={index}
+                  key={sticker as string}
                   onClick={() => handleSelect(sticker)}
                   className="text-3xl hover:bg-muted rounded p-2 transition transform hover:scale-110"
                 >
@@ -84,15 +85,17 @@ export function StickerPicker({ onSelect }: StickerPickerProps) {
                 </button>
               ) : (
                 <button
-                  key={index}
+                  key={(sticker as StickerItem).url || index}
                   onClick={() => handleSelect(sticker)}
                   className="w-12 h-12 hover:bg-muted rounded p-1 transition transform hover:scale-110"
                   title={(sticker as StickerItem).filename}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={(sticker as StickerItem).url || ''}
                     alt="sticker"
+                    width={48}
+                    height={48}
+                    unoptimized
                     className="w-full h-full object-contain"
                   />
                 </button>

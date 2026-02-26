@@ -1,12 +1,11 @@
 import type { NextAuthConfig } from 'next-auth';
 
 /**
- * Edge-compatible NextAuth configuration.
- * This file MUST NOT import any Node.js-only modules (e.g. Prisma, bcrypt)
- * because it is used in the Next.js middleware which runs on the Edge Runtime.
- *
- * The Credentials provider and any Prisma logic live in lib/auth.ts, which
- * is only ever executed in the Node.js server context.
+ * NextAuth configuration used in the Next.js Proxy (proxy.ts).
+ * In Next.js 16, Proxy runs on the Node.js runtime by default (no longer Edge).
+ * Prisma/bcrypt logic still lives in lib/auth.ts to keep auth concerns separated;
+ * this file only carries the lightweight JWT/session callbacks needed at the
+ * proxy layer for route protection.
  */
 export const authConfig = {
   providers: [], // providers are added in lib/auth.ts
@@ -18,9 +17,15 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const isOnAdminPanel = nextUrl.pathname.startsWith('/admin');
       const isOnLoginPage = nextUrl.pathname.startsWith('/admin/login');
+      const isOnPresenterPage = nextUrl.pathname.startsWith('/presenter');
 
       // Protect admin routes
       if (isOnAdminPanel && !isOnLoginPage) {
+        return isLoggedIn;
+      }
+
+      // Presenter is admin-only (admins display it on a second screen)
+      if (isOnPresenterPage) {
         return isLoggedIn;
       }
 
@@ -50,5 +55,7 @@ export const authConfig = {
   },
   session: {
     strategy: 'jwt',
+    // Tokens expire after 8 hours; users must re-authenticate.
+    maxAge: 8 * 60 * 60,
   },
 } satisfies NextAuthConfig;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { getWsManager } from '@/lib/ws-manager';
@@ -12,6 +12,7 @@ const updateSessionSchema = z.object({
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
   backgroundUrl: z.string().optional().nullable(),
   themeConfig: z.record(z.string(), z.any()).optional(),
+  code: z.string().min(3).max(20).regex(/^[A-Z0-9-]+$/).optional(),
 });
 
 // GET /api/sessions/[id]
@@ -21,14 +22,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
     const sessionData = await prisma.session.findUnique({
       where: { id },
@@ -46,6 +41,7 @@ export async function GET(
         },
         participants: {
           orderBy: { joinedAt: 'desc' },
+          take: 200, // Cap to prevent unbounded memory usage
         },
         _count: {
           select: {
@@ -64,7 +60,7 @@ export async function GET(
     }
 
     // Verify ownership
-    if (sessionData.adminId !== session.user.id) {
+    if (sessionData.adminId !== admin.id) {
       return NextResponse.json(
         { success: false, error: 'Forbidden' },
         { status: 403 }
@@ -91,14 +87,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
     // Verify ownership
     const existingSession = await prisma.session.findUnique({
@@ -112,7 +102,7 @@ export async function PATCH(
       );
     }
 
-    if (existingSession.adminId !== session.user.id) {
+    if (existingSession.adminId !== admin.id) {
       return NextResponse.json(
         { success: false, error: 'Forbidden' },
         { status: 403 }
@@ -121,6 +111,14 @@ export async function PATCH(
 
     const body = await request.json();
     const validatedData = updateSessionSchema.parse(body);
+
+    // Check code uniqueness if changing it
+    if (validatedData.code && validatedData.code !== existingSession.code) {
+      const existingCode = await prisma.session.findUnique({ where: { code: validatedData.code } });
+      if (existingCode) {
+        return NextResponse.json({ success: false, error: 'Session code already in use' }, { status: 409 });
+      }
+    }
 
     const updatedSession = await prisma.session.update({
       where: { id },
@@ -170,14 +168,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
     // Verify ownership
     const existingSession = await prisma.session.findUnique({
@@ -191,7 +183,7 @@ export async function DELETE(
       );
     }
 
-    if (existingSession.adminId !== session.user.id) {
+    if (existingSession.adminId !== admin.id) {
       return NextResponse.json(
         { success: false, error: 'Forbidden' },
         { status: 403 }

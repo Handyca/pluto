@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import * as bcrypt from 'bcryptjs';
+import { z } from 'zod';
+
+const createAdminSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  name: z.string().min(1).max(100).optional(),
+});
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireAdmin();
+    if (response) return response;
 
     const admins = await prisma.admin.findMany({
       select: {
@@ -40,22 +42,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireAdmin();
+    if (response) return response;
 
-    const { email, password } = await request.json();
-
-    if (!email || !password) {
+    const body = await request.json();
+    const parsed = createAdminSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Email and password are required' },
+        { success: false, error: parsed.error.issues[0].message },
         { status: 400 }
       );
     }
+    const { email, password, name } = parsed.data;
 
     const existingAdmin = await prisma.admin.findUnique({
       where: { email },
@@ -74,6 +72,7 @@ export async function POST(request: NextRequest) {
       data: {
         email,
         password: hashedPassword,
+        ...(name && { name }),
       },
       select: {
         id: true,

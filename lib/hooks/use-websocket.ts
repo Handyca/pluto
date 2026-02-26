@@ -31,6 +31,8 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // When true, the disconnect was intentional — skip auto-reconnect.
+  const intentionalDisconnectRef = useRef(false);
   // Stable ref to always call the latest `connect` with reconnect logic.
   const connectRef = useRef<() => void>(() => {});
   const [isConnected, setIsConnected] = useState(false);
@@ -52,6 +54,9 @@ export function useWebSocket({
     if (!url) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
+    // Reset flags for this explicit connection attempt.
+    intentionalDisconnectRef.current = false;
+    reconnectAttemptsRef.current = 0;
     setIsConnecting(true);
     console.log(`🔗 Attempting WebSocket connection (${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts + 1}): ${url}`);
 
@@ -82,8 +87,8 @@ export function useWebSocket({
         wsRef.current = null;
         onCloseRef.current?.();
 
-        // Attempt reconnect
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        // Attempt reconnect only if this was NOT an intentional disconnect.
+        if (!intentionalDisconnectRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           console.log(
             `🔄 Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`
@@ -91,7 +96,7 @@ export function useWebSocket({
           reconnectTimeoutRef.current = setTimeout(() => {
             connectRef.current();
           }, reconnectInterval);
-        } else {
+        } else if (!intentionalDisconnectRef.current) {
           console.error(`❌ WebSocket: gave up after ${maxReconnectAttempts} attempts to connect to ${url}. Make sure the WS server is running: bun run dev`);
         }
       };
@@ -120,6 +125,8 @@ export function useWebSocket({
       reconnectTimeoutRef.current = null;
     }
 
+    intentionalDisconnectRef.current = true; // Prevent auto-reconnect on close
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -127,12 +134,11 @@ export function useWebSocket({
 
     setIsConnected(false);
     setIsConnecting(false);
-    reconnectAttemptsRef.current = maxReconnectAttempts; // Prevent auto-reconnect
-  }, [maxReconnectAttempts]);
+  }, []);
 
   const reconnect = useCallback(() => {
+    intentionalDisconnectRef.current = true; // stop any in-flight reconnect timers
     disconnect();
-    reconnectAttemptsRef.current = 0;
     connect();
   }, [connect, disconnect]);
 

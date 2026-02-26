@@ -1,29 +1,35 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getWsStats } from '@/lib/ws-manager';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
-    const activeSessions = await prisma.session.count({
-      where: { isActive: true },
-    });
+    // Run all counts + WS stats in parallel.
+    const [activeSessions, totalParticipants, totalMessages, wsResult] = await Promise.all([
+      prisma.session.count({ where: { adminId: admin.id, isActive: true } }),
+      prisma.participant.count({
+        where: { session: { adminId: admin.id } },
+      }),
+      prisma.message.count({
+        where: { session: { adminId: admin.id } },
+      }),
+      getWsStats(),
+    ]);
 
-    const totalParticipants = await prisma.participant.count();
-
-    const totalMessages = await prisma.message.count();
-
-    // Calculate uptime (placeholder - in real scenario track from server start)
-    const uptime = '99.8%';
+    const wsConnected = wsResult.available;
+    const wsStats = wsResult.available ? wsResult : null;
+    // Uptime derived from process start time (accurate for single-process setup).
+    const uptimeSeconds = Math.floor(process.uptime());
+    const uptimeHours = Math.floor(uptimeSeconds / 3600);
+    const uptimeMins = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeSecs = uptimeSeconds % 60;
+    const uptime = `${String(uptimeHours).padStart(2,'0')}:${String(uptimeMins).padStart(2,'0')}:${String(uptimeSecs).padStart(2,'0')}`;
 
     return NextResponse.json({
       success: true,
@@ -31,7 +37,9 @@ export async function GET() {
         activeSessions,
         totalParticipants,
         totalMessages,
-        wsConnected: true,
+        wsConnected,
+        wsConnections: wsStats?.totalConnections ?? 0,
+        wsRooms: wsStats?.activeRooms ?? 0,
         latency: 0,
         uptime,
       },

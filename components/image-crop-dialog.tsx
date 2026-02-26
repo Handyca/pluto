@@ -49,7 +49,7 @@ export function ImageCropDialog({
     if (!croppedAreaPixels) return;
     setIsProcessing(true);
     try {
-      const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
+      const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels, rotation);
       const previewUrl = URL.createObjectURL(blob);
       onConfirm(blob, previewUrl);
     } catch (err) {

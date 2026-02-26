@@ -13,9 +13,10 @@ export interface ThemeConfig {
   chatOverlay: string;
   fontFamily: string;
   fontSize: string;
-  chatPosition: 'left' | 'right' | 'bottom';
+  chatPosition: 'left' | 'right' | 'bottom' | 'top' | 'center' | 'full';
   chatMode?: 'chat' | 'wordCloud';
   showTitle?: boolean;
+  showQrCode?: boolean;
   bgObjectFit?: 'cover' | 'contain' | 'fill';
   bgObjectPosition?: string;
 }
@@ -32,6 +33,7 @@ export enum WSMessageType {
   NEW_MESSAGE = 'new_message',
   MESSAGE_UPDATED = 'message_updated',
   MESSAGE_DELETED = 'message_deleted',
+  ALL_MESSAGES_CLEARED = 'all_messages_cleared',
   BACKGROUND_UPDATED = 'background_updated',
   THEME_UPDATED = 'theme_updated',
   PARTICIPANT_JOINED = 'participant_joined',
@@ -41,11 +43,33 @@ export enum WSMessageType {
 }
 
 // WebSocket message payloads
-export interface WSMessage {
-  type: WSMessageType;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload: any;
-  timestamp?: number;
+/** Discriminated union — each case carries a strongly-typed payload. */
+export type WSMessage =
+  | { type: WSMessageType.JOIN_SESSION;      payload: JoinSessionPayload;          timestamp?: number }
+  | { type: WSMessageType.SEND_MESSAGE;      payload: SendMessagePayload;          timestamp?: number }
+  | { type: WSMessageType.PING;              payload: Record<string, never>;       timestamp?: number }
+  | { type: WSMessageType.SESSION_JOINED;    payload: SessionJoinedPayload;        timestamp?: number }
+  | { type: WSMessageType.NEW_MESSAGE;       payload: Message;                     timestamp?: number }
+  | { type: WSMessageType.MESSAGE_UPDATED;   payload: MessageUpdatedPayload;       timestamp?: number }
+  | { type: WSMessageType.MESSAGE_DELETED;   payload: { messageId: string };       timestamp?: number }
+  | { type: WSMessageType.ALL_MESSAGES_CLEARED; payload: { sessionId: string };   timestamp?: number }
+  | { type: WSMessageType.BACKGROUND_UPDATED; payload: BackgroundUpdatedPayload;  timestamp?: number }
+  | { type: WSMessageType.THEME_UPDATED;     payload: ThemeUpdatedPayload;         timestamp?: number }
+  | { type: WSMessageType.PARTICIPANT_JOINED; payload: Participant;                timestamp?: number }
+  | { type: WSMessageType.PARTICIPANT_LEFT;  payload: { participantId: string };   timestamp?: number }
+  | { type: WSMessageType.ERROR;             payload: { error: string };           timestamp?: number }
+  | { type: WSMessageType.PONG;             payload: Record<string, never>;        timestamp?: number };
+
+export interface SessionJoinedPayload {
+  session: {
+    id: string;
+    title: string;
+    code: string;
+    backgroundType: string;
+    backgroundUrl?: string | null;
+    themeConfig: unknown;
+  };
+  messages: Message[];
 }
 
 export interface JoinSessionPayload {
@@ -71,13 +95,11 @@ export interface MessageUpdatedPayload {
 }
 
 export interface BackgroundUpdatedPayload {
-  sessionId: string;
   backgroundType: string;
   backgroundUrl?: string;
 }
 
 export interface ThemeUpdatedPayload {
-  sessionId: string;
   themeConfig: ThemeConfig;
 }
 

@@ -20,7 +20,11 @@ export default function GlobalError({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#09090b', color: '#fafafa' }}>
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem' }}>Something went wrong</h1>
-            <p style={{ color: '#a1a1aa', marginBottom: '1.5rem' }}>{error.message}</p>
+            <p style={{ color: '#a1a1aa', marginBottom: '1.5rem' }}>
+              {process.env.NODE_ENV === 'development'
+                ? error.message
+                : 'An unexpected error occurred. Please try again.'}
+            </p>
             <button
               onClick={() => reset()}
               style={{ padding: '0.5rem 1.25rem', background: '#3b82f6', color: '#fff', borderRadius: '0.375rem', border: 'none', cursor: 'pointer' }}

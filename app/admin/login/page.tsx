@@ -12,8 +12,8 @@ import { toast } from 'sonner';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@pluto.local');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -91,12 +91,7 @@ export default function AdminLoginPage() {
             </Button>
           </form>
 
-          <div className="mt-4 text-sm text-muted-foreground text-center">
-            <p>Default credentials (development only):</p>
-            <p className="font-mono text-xs mt-1">
-              admin@pluto.local / admin123
-            </p>
-          </div>
+
         </CardContent>
       </Card>
     </div>

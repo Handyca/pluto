@@ -11,7 +11,7 @@ interface VideoBackgroundProps {
 
 export function VideoBackground({ 
   src, 
-  muted = true, 
+  muted = false, 
   loop = true,
   className = ''
 }: VideoBackgroundProps) {

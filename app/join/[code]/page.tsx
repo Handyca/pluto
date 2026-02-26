@@ -1,28 +1,35 @@
-'use client';
+"use client";
 
-import { use, useState, useEffect, useRef } from 'react';
-import { useJoinSession, useSessionByCode } from '@/lib/hooks/use-sessions';
-import { useWebSocket } from '@/lib/hooks/use-websocket';
-import { PageLoading } from '@/components/loading';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
-import { EmojiPicker } from '@/components/emoji-picker';
-import { PhotoUpload } from '@/components/photo-upload';
-import { MessageBubble } from '@/components/message-bubble';
-import { WSMessageType, Message, MessageType } from '@/types';
-import { Send, Loader2, X } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
-import { generateAnonymousId, getWsUrl } from '@/lib/utils';
+import { use, useState, useEffect, useRef } from "react";
+import { useJoinSession, useSessionByCode } from "@/lib/hooks/use-sessions";
+import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { PageLoading } from "@/components/loading";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { EmojiPicker } from "@/components/emoji-picker";
+import { PhotoUpload } from "@/components/photo-upload";
+import { MessageBubble } from "@/components/message-bubble";
+import { WSMessageType, Message, MessageType } from "@/types";
+import { Send, Loader2, X } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
+import { generateAnonymousId, getWsUrl } from "@/lib/utils";
 
 // LocalStorage keys
-const STORAGE_KEY_PREFIX = 'pluto_participant_';
+const STORAGE_KEY_PREFIX = "pluto_participant_";
 
+/** Stored WITHOUT the JWT token — the token is in an httpOnly cookie and is
+ * obtained by re-joining with the persisted anonymousId on page reload. */
 interface StoredParticipantSession {
-  token: string;
   participantName: string;
   anonymousId: string;
   sessionCode: string;
@@ -41,18 +48,19 @@ export default function JoinPage({
 }) {
   const { code } = use(params);
   const [joined, setJoined] = useState(false);
-  const [nickname, setNickname] = useState('');
-  const [token, setToken] = useState('');
-  const [participantName, setParticipantName] = useState('');
+  const [nickname, setNickname] = useState("");
+  const [token, setToken] = useState("");
+  const [participantName, setParticipantName] = useState("");
   const [messages, setMessages] = useState<LocalMessage[]>([]);
-  const [messageInput, setMessageInput] = useState('');
+  const [messageInput, setMessageInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [anonymousId] = useState(() => generateAnonymousId());
 
-  const { data: sessionInfo, isLoading: loadingSession } = useSessionByCode(code);
+  const { data: sessionInfo, isLoading: loadingSession } =
+    useSessionByCode(code);
   const joinMutation = useJoinSession();
 
   const reconcileIncomingMessage = (incoming: Message) => {
@@ -64,7 +72,7 @@ export default function JoinPage({
           msg.participantName === incoming.participantName &&
           msg.content === incoming.content &&
           (incoming.imageUrl ? msg.imageUrl === incoming.imageUrl : true) &&
-          (incoming.stickerUrl ? msg.stickerUrl === incoming.stickerUrl : true)
+          (incoming.stickerUrl ? msg.stickerUrl === incoming.stickerUrl : true),
       );
 
       if (matchIndex >= 0) {
@@ -96,14 +104,14 @@ export default function JoinPage({
             prev.map((msg) =>
               msg.id === wsMessage.payload.messageId
                 ? { ...msg, ...wsMessage.payload }
-                : msg
-            )
+                : msg,
+            ),
           );
           break;
 
         case WSMessageType.MESSAGE_DELETED:
           setMessages((prev) =>
-            prev.filter((msg) => msg.id !== wsMessage.payload.messageId)
+            prev.filter((msg) => msg.id !== wsMessage.payload.messageId),
           );
           break;
       }
@@ -126,11 +134,11 @@ export default function JoinPage({
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     const storageKey = `${STORAGE_KEY_PREFIX}${code}`;
 
     try {
@@ -144,13 +152,31 @@ export default function JoinPage({
         return;
       }
 
-      setToken(stored.token);
-      setParticipantName(stored.participantName);
-      setNickname(stored.participantName);
-      setJoined(true);
+      // Re-join with the stored anonymousId to obtain a fresh token.
+      // The JWT is never read from localStorage — it lives only in the
+      // httpOnly cookie and in React state during the session.
+      joinMutation
+        .mutateAsync({
+          code,
+          participantName: stored.participantName,
+          anonymousId: stored.anonymousId,
+        })
+        .then((result) => {
+          if (result) {
+            setToken(result.token);
+            setParticipantName(stored.participantName);
+            setNickname(stored.participantName);
+            setJoined(true);
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem(storageKey);
+        });
     } catch {
       localStorage.removeItem(storageKey);
     }
+    // joinMutation.mutateAsync is a stable reference from TanStack Query
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   const addOptimisticMessage = (payload: {
@@ -162,7 +188,7 @@ export default function JoinPage({
     if (!sessionInfo?.id || !participantName) return;
 
     const clientId =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random()}`;
 
@@ -199,11 +225,12 @@ export default function JoinPage({
       setToken(result.token);
       setParticipantName(nickname);
       setJoined(true);
-      if (typeof window !== 'undefined') {
+      if (typeof window !== "undefined") {
         const storageKey = `${STORAGE_KEY_PREFIX}${code}`;
         const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+        // Do NOT store the JWT token — it's already in the httpOnly cookie.
+        // Only non-sensitive identifiers are persisted so we can auto-rejoin.
         const stored: StoredParticipantSession = {
-          token: result.token,
           participantName: nickname,
           anonymousId,
           sessionCode: code,
@@ -211,13 +238,13 @@ export default function JoinPage({
         };
         localStorage.setItem(storageKey, JSON.stringify(stored));
       }
-      toast.success('Joined successfully!');
+      toast.success("Joined successfully!");
     }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || isSending) return;
+    if (!messageInput.trim() || isSending || !sessionInfo?.id) return;
 
     setIsSending(true);
     try {
@@ -228,16 +255,16 @@ export default function JoinPage({
       sendWsMessage({
         type: WSMessageType.SEND_MESSAGE,
         payload: {
-          sessionId: sessionInfo?.id,
+          sessionId: sessionInfo.id,
           participantName,
           type: MessageType.TEXT,
           content: messageInput.trim(),
         },
       });
 
-      setMessageInput('');
+      setMessageInput("");
     } catch {
-      toast.error('Failed to send message');
+      toast.error("Failed to send message");
     } finally {
       setIsSending(false);
     }
@@ -253,25 +280,25 @@ export default function JoinPage({
   };
 
   const handleSendPhoto = async () => {
-    if (!selectedPhotoFile || isSending) return;
+    if (!selectedPhotoFile || isSending || !sessionInfo?.id) return;
 
     setIsSending(true);
     try {
       const formData = new FormData();
-      formData.append('file', selectedPhotoFile);
-      formData.append('type', 'image');
+      formData.append("file", selectedPhotoFile);
+      formData.append("type", "image");
       if (token) {
-        formData.append('participantToken', token);
+        formData.append("participantToken", token);
       }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to upload image');
+        throw new Error(error.error || "Failed to upload image");
       }
 
       const result = await response.json();
@@ -285,7 +312,7 @@ export default function JoinPage({
       sendWsMessage({
         type: WSMessageType.SEND_MESSAGE,
         payload: {
-          sessionId: sessionInfo?.id,
+          sessionId: sessionInfo.id,
           participantName,
           type: MessageType.IMAGE,
           content: messageInput.trim(),
@@ -293,12 +320,13 @@ export default function JoinPage({
         },
       });
 
-      setMessageInput('');
+      setMessageInput("");
       setPhotoPreview(null);
       setSelectedPhotoFile(null);
-      toast.success('Photo sent!');
+      toast.success("Photo sent!");
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to upload photo';
+      const message =
+        error instanceof Error ? error.message : "Failed to upload photo";
       toast.error(message);
     } finally {
       setIsSending(false);
@@ -321,7 +349,8 @@ export default function JoinPage({
           <CardHeader>
             <CardTitle>Session Not Found</CardTitle>
             <CardDescription>
-              The session code &quot;{code}&quot; does not exist or is no longer active.
+              The session code &quot;{code}&quot; does not exist or is no longer
+              active.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -336,7 +365,8 @@ export default function JoinPage({
           <CardHeader>
             <CardTitle>Session Inactive</CardTitle>
             <CardDescription>
-              This session is currently not active. Please check with the organizer.
+              This session is currently not active. Please check with the
+              organizer.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -371,9 +401,9 @@ export default function JoinPage({
                 />
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full" 
+              <Button
+                type="submit"
+                className="w-full"
                 disabled={joinMutation.isPending || !nickname.trim()}
               >
                 {joinMutation.isPending ? (
@@ -382,7 +412,7 @@ export default function JoinPage({
                     Joining...
                   </>
                 ) : (
-                  'Join Session'
+                  "Join Session"
                 )}
               </Button>
             </form>
@@ -407,9 +437,11 @@ export default function JoinPage({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <div
+              className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+            />
             <span className="text-sm text-muted-foreground">
-              {isConnected ? 'Connected' : 'Disconnected'}
+              {isConnected ? "Connected" : "Disconnected"}
             </span>
           </div>
         </div>
@@ -442,10 +474,10 @@ export default function JoinPage({
           {photoPreview && (
             <div className="mb-4 relative inline-block">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src={photoPreview} 
-                alt="preview" 
-                className="max-w-xs max-h-48 rounded-lg border" 
+              <img
+                src={photoPreview}
+                alt="preview"
+                className="max-w-xs max-h-48 rounded-lg border"
               />
               <button
                 onClick={clearPhotoPreview}
@@ -457,44 +489,69 @@ export default function JoinPage({
           )}
 
           <form
-            onSubmit={photoPreview ? (e) => { e.preventDefault(); handleSendPhoto(); } : handleSendMessage}
-            className="flex items-end gap-2"
-          >
-            <div className="flex items-end gap-2 flex-1 border rounded-lg px-2 py-2 bg-background">
-              <EmojiPicker onSelect={handleEmojiSelect} />
-              <PhotoUpload onPhotoSelect={handlePhotoSelect} isLoading={isSending} />
-              <Textarea
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                placeholder={photoPreview ? "Add a caption to your photo (optional)" : "Type your message..."}
-                className="flex-1 resize-none min-h-[44px] max-h-32 border-0 focus-visible:ring-0"
-                maxLength={1000}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+            onSubmit={
+              photoPreview
+                ? (e) => {
                     e.preventDefault();
-                    if (photoPreview) {
-                      handleSendPhoto();
-                    } else {
-                      handleSendMessage(e);
-                    }
+                    handleSendPhoto();
                   }
-                }}
-              />
+                : handleSendMessage
+            }
+          >
+            <div className="border rounded-xl bg-background focus-within:ring-2 focus-within:ring-ring/20 transition-shadow">
+              {/* Textarea row */}
+              <div className="flex items-end gap-2 px-3 pt-2">
+                <Textarea
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  placeholder={
+                    photoPreview
+                      ? "Add a caption to your photo (optional)"
+                      : "Type your message..."
+                  }
+                  className="flex-1 min-w-0 resize-none min-h-[44px] max-h-32 border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 break-words overflow-hidden"
+                  maxLength={1000}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (photoPreview) {
+                        handleSendPhoto();
+                      } else {
+                        handleSendMessage(e);
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="flex-shrink-0 mb-1"
+                  disabled={
+                    photoPreview ? isSending : !messageInput.trim() || isSending
+                  }
+                >
+                  {isSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {/* Action bar */}
+              <div className="flex items-center gap-1 px-2 pb-2">
+                <EmojiPicker onSelect={handleEmojiSelect} />
+                <PhotoUpload
+                  onPhotoSelect={handlePhotoSelect}
+                  isLoading={isSending}
+                />
+                <span className="ml-auto text-xs text-muted-foreground pr-1 shrink-0">
+                  {messageInput.length}/1000
+                </span>
+              </div>
             </div>
-            <Button
-              type="submit"
-              size="icon"
-              disabled={photoPreview ? isSending : (!messageInput.trim() || isSending)}
-            >
-              {isSending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
           </form>
-          <p className="text-xs text-muted-foreground mt-2">
-            {messageInput.length}/1000 characters • Press Enter to send, Shift+Enter for new line
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Press Enter to send • Shift+Enter for new line
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
@@ -9,13 +9,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin: currentAdmin, response } = await requireAdmin();
+    if (response) return response;
 
     const { id } = await params;
 
@@ -30,8 +25,8 @@ export async function DELETE(
       );
     }
 
-    // Prevent deleting the current user
-    if (admin.email === session.user.email) {
+    // Prevent deleting the current user (compare by ID, not email)
+    if (admin.id === currentAdmin.id) {
       return NextResponse.json(
         { success: false, error: 'Cannot delete your own account' },
         { status: 400 }

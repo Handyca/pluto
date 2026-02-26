@@ -1,26 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Session, SessionWithRelations } from '@/types';
 import { toast } from 'sonner';
-
-// Helper function to handle fetch errors
-async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  
-  if (!res.ok) {
-    // Try to parse error as JSON, fall back to status text
-    let errorMessage = `HTTP ${res.status}`;
-    try {
-      const error = await res.json();
-      errorMessage = error.error || error.message || errorMessage;
-    } catch {
-      errorMessage = res.statusText || errorMessage;
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data = await res.json();
-  return data;
-}
+import { fetchJSON } from '@/lib/api';
 
 // Fetch all sessions
 export function useSessions() {
@@ -48,7 +29,7 @@ export function useSession(id: string) {
 }
 
 // Fetch session by code (public)
-export function useSessionByCode(code: string) {
+export function useSessionByCode(code: string, refetchInterval?: number) {
   return useQuery({
     queryKey: ['sessions', 'code', code],
     queryFn: async () => {
@@ -57,6 +38,7 @@ export function useSessionByCode(code: string) {
       return data.data;
     },
     enabled: !!code,
+    refetchInterval,
   });
 }
 

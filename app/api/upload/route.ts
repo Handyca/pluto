@@ -7,6 +7,11 @@ import { isValidImageType, isValidVideoType, resolveFileMime } from '@/lib/utils
 import { verifyParticipantToken } from '@/lib/participant-auth';
 import { MediaType } from '@prisma/client';
 import sharp from 'sharp';
+import { z } from 'zod';
+import { uploadLimiter, getClientIp } from '@/lib/rate-limit';
+
+const ALLOWED_UPLOAD_TYPES = z.enum(['image', 'video', 'sticker']);
+const ALLOWED_MEDIA_TYPES = z.nativeEnum(MediaType);
 
 export const runtime = 'nodejs';
 
@@ -52,10 +57,29 @@ export async function POST(request: NextRequest) {
       );
     }
     const file = formData.get('file') as File | null;
-    const type = formData.get('type') as string; // 'image', 'video', 'sticker'
+    const rawType = formData.get('type') as string | null;
     const participantToken = formData.get('participantToken') as string | null;
 
+    // Validate the type field to prevent path traversal attacks.
+    const parsedType = ALLOWED_UPLOAD_TYPES.safeParse(rawType);
+    if (!parsedType.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid upload type (must be image, video, or sticker)' },
+        { status: 400 }
+      );
+    }
+    const type = parsedType.data;
+
     const session = await auth();
+
+    // Rate limit: 10 uploads per minute per IP or participant.
+    const ip = getClientIp(request);
+    if (uploadLimiter.isRateLimited(ip)) {
+      return NextResponse.json(
+        { success: false, error: 'Too many uploads — please wait and try again' },
+        { status: 429 }
+      );
+    }
     let participant = null;
     if (!session?.user) {
       if (participantToken) {
@@ -128,11 +152,12 @@ export async function POST(request: NextRequest) {
     // For images: resize to max 1920×1080, strip metadata, convert to WebP.
     // This keeps file sizes small and ensures consistent quality on screen.
     if (isImage) {
-      buffer = await sharp(buffer)
+      const processedBuffer = await sharp(buffer)
         .rotate() // auto-orient from EXIF
         .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 })
         .toBuffer();
+      buffer = Buffer.from(processedBuffer);
       finalMime = 'image/webp';
       ext = 'webp';
     }
@@ -191,8 +216,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    let typeFilter: MediaType | undefined;
+    if (type) {
+      const parsedMediaType = ALLOWED_MEDIA_TYPES.safeParse(type.toUpperCase());
+      if (!parsedMediaType.success) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid type filter' },
+          { status: 400 }
+        );
+      }
+      typeFilter = parsedMediaType.data;
+    }
+
     const mediaAssets = await prisma.mediaAsset.findMany({
-      where: type ? { type: type.toUpperCase() as MediaType } : undefined,
+      where: typeFilter ? { type: typeFilter } : undefined,
       orderBy: { createdAt: 'desc' },
     });
 

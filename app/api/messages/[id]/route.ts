@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { getWsManager } from '@/lib/ws-manager';
@@ -18,14 +18,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
     // Verify message exists and admin owns the session
     const message = await prisma.message.findUnique({
@@ -40,7 +34,7 @@ export async function PATCH(
       );
     }
 
-    if (message.session.adminId !== session.user.id) {
+    if (message.session.adminId !== admin.id) {
       return NextResponse.json(
         { success: false, error: 'Forbidden' },
         { status: 403 }
@@ -86,14 +80,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { admin, response } = await requireAdmin();
+    if (response) return response;
 
     // Verify message exists and admin owns the session
     const message = await prisma.message.findUnique({
@@ -108,7 +96,7 @@ export async function DELETE(
       );
     }
 
-    if (message.session.adminId !== session.user.id) {
+    if (message.session.adminId !== admin.id) {
       return NextResponse.json(
         { success: false, error: 'Forbidden' },
         { status: 403 }

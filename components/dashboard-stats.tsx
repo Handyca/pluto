@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,6 +11,8 @@ import {
   Activity,
   TrendingUp,
 } from 'lucide-react';
+import { useWebSocket } from '@/lib/hooks/use-websocket';
+import { getWsUrl } from '@/lib/utils';
 
 interface DashboardStats {
   activeSessions: number;
@@ -19,99 +21,16 @@ interface DashboardStats {
   uptime: string;
 }
 
-interface WSStatus {
-  connected: boolean;
-  latency: number;
-}
-
 export function DashboardStats() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [wsStatus, setWsStatus] = useState<WSStatus>({
-    connected: false,
-    latency: 0,
+  const [latency, setLatency] = useState(0);
+  const connectTime = useState(() => Date.now())[0];
+
+  const wsUrl = typeof window !== 'undefined' ? getWsUrl() : '';
+  const { isConnected } = useWebSocket({
+    url: wsUrl,
+    onOpen: () => setLatency(Math.max(1, Date.now() - connectTime)),
   });
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-
-  // Establish WebSocket connection
-  useEffect(() => {
-    const connectWebSocket = () => {
-      if (typeof window === 'undefined') return;
-
-      try {
-        const wsProto =
-          window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProto}//${window.location.host}/ws`;
-
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          return; // Already connected
-        }
-
-        const startTime = Date.now();
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          console.log('✅ WebSocket connected');
-          setWsStatus({
-            connected: true,
-            latency: Math.max(1, Date.now() - startTime),
-          });
-          reconnectAttemptsRef.current = 0;
-        };
-
-        ws.onerror = () => {
-          console.warn(`⚠️ WebSocket error: ${wsUrl}`);
-          setWsStatus((prev) => ({ ...prev, connected: false }));
-        };
-
-        ws.onclose = () => {
-          console.log('📴 WebSocket disconnected');
-          setWsStatus((prev) => ({ ...prev, connected: false }));
-          wsRef.current = null;
-
-          // Auto-reconnect with exponential backoff
-          if (
-            reconnectAttemptsRef.current < maxReconnectAttempts
-          ) {
-            reconnectAttemptsRef.current++;
-            const delay = Math.min(
-              10000,
-              1000 * Math.pow(2, reconnectAttemptsRef.current - 1)
-            );
-            console.log(
-              `🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`
-            );
-            reconnectTimeoutRef.current = setTimeout(
-              connectWebSocket,
-              delay
-            );
-          } else {
-            console.error(
-              `❌ WebSocket: gave up after ${maxReconnectAttempts} attempts`
-            );
-          }
-        };
-
-        wsRef.current = ws;
-      } catch (error) {
-        console.error('Failed to create WebSocket:', error);
-        setWsStatus((prev) => ({ ...prev, connected: false }));
-      }
-    };
-
-    connectWebSocket();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.close();
-      }
-    };
-  }, []); // Empty dependency array - only run once on mount
 
   // Fetch stats separately
   useEffect(() => {
@@ -164,7 +83,7 @@ export function DashboardStats() {
     },
     {
       title: 'Latency',
-      value: `${wsStatus.latency}ms`,
+      value: `${latency}ms`,
       icon: Activity,
       color: 'text-orange-400',
     },
@@ -175,7 +94,7 @@ export function DashboardStats() {
       {/* Status Banner */}
       <div className="flex items-center gap-4 rounded-lg bg-card p-4 border">
         <div className="flex items-center gap-2">
-          {wsStatus.connected ? (
+          {isConnected ? (
             <>
               <Wifi className="h-5 w-5 text-green-500" />
               <span className="text-sm font-medium">WebSocket Connected</span>

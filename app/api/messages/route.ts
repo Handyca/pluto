@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { verifyParticipantToken, extractParticipantToken } from '@/lib/participant-auth';
 import { z } from 'zod';
+import { messageLimiter, getClientIp } from '@/lib/rate-limit';
+import { getWsManager } from '@/lib/ws-manager';
 
 export const runtime = 'nodejs';
 
@@ -112,6 +114,15 @@ export async function GET(request: NextRequest) {
 // POST /api/messages - Create new message (handled by WebSocket, but kept for fallback)
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 30 messages per minute per IP.
+    const ip = getClientIp(request);
+    if (messageLimiter.isRateLimited(ip)) {
+      return NextResponse.json(
+        { success: false, error: 'Too many requests — please slow down' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const validatedData = createMessageSchema.parse(body);
 
@@ -170,5 +181,41 @@ export async function POST(request: NextRequest) {
       { success: false, error: 'Failed to create message' },
       { status: 500 }
     );
+  }
+}
+
+// DELETE /api/messages?sessionId=xxx  — bulk delete all messages in a session (admin only)
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get('sessionId');
+    if (!sessionId) {
+      return NextResponse.json({ success: false, error: 'Session ID is required' }, { status: 400 });
+    }
+
+    // Verify the admin owns this session
+    const sessionData = await prisma.session.findUnique({ where: { id: sessionId } });
+    if (!sessionData) {
+      return NextResponse.json({ success: false, error: 'Session not found' }, { status: 404 });
+    }
+    if (sessionData.adminId !== session.user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    await prisma.message.deleteMany({ where: { sessionId } });
+
+    // Notify all WebSocket clients watching this session to clear their message list.
+    const wsManager = getWsManager();
+    wsManager?.broadcastAllMessagesCleared(sessionId);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Delete messages error:', error);
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }

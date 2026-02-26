@@ -8,7 +8,9 @@ const nextConfig: NextConfig = {
     // Next.js wraps every non-GET request body in a clonable stream with a
     // default 10MB cap. Files larger than that are truncated, dropping the
     // closing multipart boundary and causing a 400 "Missing final boundary"
-    // error. Raise the cap to match the largest allowed upload (100MB video).
+    // error. This raises the cap to match the largest allowed upload (100MB video).
+    // Note: the /api/upload route validates the actual file size at the
+    // application layer, so other endpoints are unaffected in practice.
     proxyClientMaxBodySize: '110mb',
   },
 };

@@ -1,21 +1,61 @@
-'use client';
+"use client";
 
-import { use, useState, useEffect, useRef } from 'react';
-import { useSession as useSessionData, useUpdateSession } from '@/lib/hooks/use-sessions';
-import { useMessages, useUpdateMessage, useDeleteMessage, useUploadFile } from '@/lib/hooks/use-messages';
-import { useWebSocket } from '@/lib/hooks/use-websocket';
-import { PageLoading } from '@/components/loading';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageBubble } from '@/components/message-bubble';
-import { SessionCodeDisplay } from '@/components/session-code-display';
-import { ImageCropDialog } from '@/components/image-crop-dialog';
+import { use, useState, useEffect, useRef } from "react";
+import {
+  useSession as useSessionData,
+  useUpdateSession,
+} from "@/lib/hooks/use-sessions";
+import {
+  useMessages,
+  useUpdateMessage,
+  useDeleteMessage,
+  useUploadFile,
+  useDeleteAllMessages,
+} from "@/lib/hooks/use-messages";
+import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { parseThemeConfig } from "@/lib/schemas";
+import { PageLoading } from "@/components/loading";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { MessageBubble } from "@/components/message-bubble";
+import { SessionCodeDisplay } from "@/components/session-code-display";
+import { ImageCropDialog } from "@/components/image-crop-dialog";
 import {
   ArrowLeft,
   Save,
@@ -25,18 +65,22 @@ import {
   Users,
   ExternalLink,
   MessageSquare,
-} from 'lucide-react';
-import Link from 'next/link';
-import { toast } from 'sonner';
-import { getWsUrl } from '@/lib/utils';
-import { WSMessageType, type Message, type ThemeConfig } from '@/types';
+  RefreshCw,
+} from "lucide-react";
+import Link from "next/link";
+import { toast } from "sonner";
+import { getWsUrl } from "@/lib/utils";
+import { WSMessageType, type Message, type ThemeConfig } from "@/types";
 
 // ---- Chat-overlay colour helpers ------------------------------------------
 function parseOverlay(rgba: string): { hex: string; opacity: number } {
   const m = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-  if (!m) return { hex: '#0f172a', opacity: 0.9 };
+  if (!m) return { hex: "#0f172a", opacity: 0.9 };
   const hex =
-    '#' + [m[1], m[2], m[3]].map((n) => parseInt(n).toString(16).padStart(2, '0')).join('');
+    "#" +
+    [m[1], m[2], m[3]]
+      .map((n) => parseInt(n).toString(16).padStart(2, "0"))
+      .join("");
   return { hex, opacity: m[4] !== undefined ? parseFloat(m[4]) : 1 };
 }
 function buildOverlay(hex: string, opacity: number): string {
@@ -51,63 +95,135 @@ function buildOverlay(hex: string, opacity: number): string {
 // Curated palettes following UX/design best-practices for dark presentation screens.
 const THEME_PRESETS = [
   {
-    name: 'Ocean Night',
-    emoji: '🌊',
-    theme: { primary: '#3b82f6', secondary: '#8b5cf6', background: '#0f172a', text: '#f1f5f9', chatOverlay: 'rgba(15,23,42,0.92)', fontFamily: 'Inter, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#0f172a', opacity: 0.92 },
+    name: "Ocean Night",
+    emoji: "🌊",
+    theme: {
+      primary: "#3b82f6",
+      secondary: "#8b5cf6",
+      background: "#0f172a",
+      text: "#f1f5f9",
+      chatOverlay: "rgba(15,23,42,0.92)",
+      fontFamily: "var(--font-inter), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#0f172a", opacity: 0.92 },
   },
   {
-    name: 'Forest',
-    emoji: '🌲',
-    theme: { primary: '#22c55e', secondary: '#16a34a', background: '#052e16', text: '#f0fdf4', chatOverlay: 'rgba(5,46,22,0.92)', fontFamily: 'Inter, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#052e16', opacity: 0.92 },
+    name: "Forest",
+    emoji: "🌲",
+    theme: {
+      primary: "#22c55e",
+      secondary: "#16a34a",
+      background: "#052e16",
+      text: "#f0fdf4",
+      chatOverlay: "rgba(5,46,22,0.92)",
+      fontFamily: "var(--font-inter), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#052e16", opacity: 0.92 },
   },
   {
-    name: 'Sunset',
-    emoji: '🌅',
-    theme: { primary: '#f97316', secondary: '#ec4899', background: '#1c0a00', text: '#fff7ed', chatOverlay: 'rgba(28,10,0,0.9)', fontFamily: 'Poppins, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#1c0a00', opacity: 0.9 },
+    name: "Sunset",
+    emoji: "🌅",
+    theme: {
+      primary: "#f97316",
+      secondary: "#ec4899",
+      background: "#1c0a00",
+      text: "#fff7ed",
+      chatOverlay: "rgba(28,10,0,0.9)",
+      fontFamily: "var(--font-poppins), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#1c0a00", opacity: 0.9 },
   },
   {
-    name: 'Nordic',
-    emoji: '❄️',
-    theme: { primary: '#60a5fa', secondary: '#93c5fd', background: '#1e3a5f', text: '#e0f2fe', chatOverlay: 'rgba(30,58,95,0.9)', fontFamily: 'Inter, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#1e3a5f', opacity: 0.9 },
+    name: "Nordic",
+    emoji: "❄️",
+    theme: {
+      primary: "#60a5fa",
+      secondary: "#93c5fd",
+      background: "#1e3a5f",
+      text: "#e0f2fe",
+      chatOverlay: "rgba(30,58,95,0.9)",
+      fontFamily: "var(--font-inter), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#1e3a5f", opacity: 0.9 },
   },
   {
-    name: 'Neon',
-    emoji: '⚡',
-    theme: { primary: '#a855f7', secondary: '#06b6d4', background: '#09090b', text: '#fafafa', chatOverlay: 'rgba(9,9,11,0.9)', fontFamily: 'Montserrat, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#09090b', opacity: 0.9 },
+    name: "Neon",
+    emoji: "⚡",
+    theme: {
+      primary: "#a855f7",
+      secondary: "#06b6d4",
+      background: "#09090b",
+      text: "#fafafa",
+      chatOverlay: "rgba(9,9,11,0.9)",
+      fontFamily: "var(--font-montserrat), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#09090b", opacity: 0.9 },
   },
   {
-    name: 'Corporate',
-    emoji: '🏢',
-    theme: { primary: '#2563eb', secondary: '#64748b', background: '#0f1f3d', text: '#f8fafc', chatOverlay: 'rgba(15,31,61,0.92)', fontFamily: 'Roboto, sans-serif', fontSize: '15', chatPosition: 'right' },
-    overlay: { hex: '#0f1f3d', opacity: 0.92 },
+    name: "Corporate",
+    emoji: "🏢",
+    theme: {
+      primary: "#2563eb",
+      secondary: "#64748b",
+      background: "#0f1f3d",
+      text: "#f8fafc",
+      chatOverlay: "rgba(15,31,61,0.92)",
+      fontFamily: "var(--font-roboto), sans-serif",
+      fontSize: "15",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#0f1f3d", opacity: 0.92 },
   },
   {
-    name: 'Rose Gold',
-    emoji: '🌸',
-    theme: { primary: '#f43f5e', secondary: '#e879f9', background: '#1a0010', text: '#fff1f2', chatOverlay: 'rgba(26,0,16,0.9)', fontFamily: 'Poppins, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#1a0010', opacity: 0.9 },
+    name: "Rose Gold",
+    emoji: "🌸",
+    theme: {
+      primary: "#f43f5e",
+      secondary: "#e879f9",
+      background: "#1a0010",
+      text: "#fff1f2",
+      chatOverlay: "rgba(26,0,16,0.9)",
+      fontFamily: "var(--font-poppins), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#1a0010", opacity: 0.9 },
   },
   {
-    name: 'Minimal Dark',
-    emoji: '◾',
-    theme: { primary: '#e2e8f0', secondary: '#94a3b8', background: '#18181b', text: '#f4f4f5', chatOverlay: 'rgba(24,24,27,0.94)', fontFamily: 'Inter, sans-serif', fontSize: '16', chatPosition: 'right' },
-    overlay: { hex: '#18181b', opacity: 0.94 },
+    name: "Minimal Dark",
+    emoji: "◾",
+    theme: {
+      primary: "#e2e8f0",
+      secondary: "#94a3b8",
+      background: "#18181b",
+      text: "#f4f4f5",
+      chatOverlay: "rgba(24,24,27,0.94)",
+      fontFamily: "var(--font-inter), sans-serif",
+      fontSize: "16",
+      chatPosition: "right",
+    },
+    overlay: { hex: "#18181b", opacity: 0.94 },
   },
 ] as const;
 // ---------------------------------------------------------------------------
 
 const FONT_FAMILIES = [
-  { label: 'Inter', value: 'Inter, sans-serif' },
-  { label: 'Roboto', value: 'Roboto, sans-serif' },
-  { label: 'Poppins', value: 'Poppins, sans-serif' },
-  { label: 'Montserrat', value: 'Montserrat, sans-serif' },
-  { label: 'Open Sans', value: 'Open Sans, sans-serif' },
-  { label: 'System UI', value: 'system-ui, sans-serif' },
+  { label: "Inter", value: "var(--font-inter), sans-serif" },
+  { label: "Roboto", value: "var(--font-roboto), sans-serif" },
+  { label: "Poppins", value: "var(--font-poppins), sans-serif" },
+  { label: "Montserrat", value: "var(--font-montserrat), sans-serif" },
+  { label: "Open Sans", value: "var(--font-open-sans), sans-serif" },
+  { label: "System UI", value: "system-ui, sans-serif" },
 ];
 
 export default function SessionManagePage({
@@ -121,41 +237,56 @@ export default function SessionManagePage({
   const updateSession = useUpdateSession(id);
   const updateMessage = useUpdateMessage();
   const deleteMessage = useDeleteMessage();
+  const deleteAllMessages = useDeleteAllMessages();
   const uploadFile = useUploadFile();
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState("");
   const [isActive, setIsActive] = useState(true);
-  const [backgroundType, setBackgroundType] = useState<'color' | 'image' | 'video'>('color');
-  const [backgroundUrl, setBackgroundUrl] = useState('');
-  const [bgObjectFit, setBgObjectFit] = useState<'cover' | 'contain' | 'fill'>('cover');
-  const [bgObjectPosition, setBgObjectPosition] = useState('center center');
+  const [backgroundType, setBackgroundType] = useState<
+    "color" | "image" | "video"
+  >("color");
+  const [backgroundUrl, setBackgroundUrl] = useState("");
+  const [showQrCode, setShowQrCode] = useState(true);
 
   // Image crop dialog state
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
-  const [cropSrc, setCropSrc] = useState('');
-  const [overlayColor, setOverlayColor] = useState('#0f172a');
+  const [cropSrc, setCropSrc] = useState("");
+  const [overlayColor, setOverlayColor] = useState("#0f172a");
   const [overlayOpacity, setOverlayOpacity] = useState(0.9);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>({
-    primary: '#3b82f6',
-    secondary: '#8b5cf6',
-    background: '#1e293b',
-    text: '#f1f5f9',
-    chatOverlay: 'rgba(15,23,42,0.9)',
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '16',
-    chatPosition: 'right',
+    primary: "#3b82f6",
+    secondary: "#8b5cf6",
+    background: "#1e293b",
+    text: "#f1f5f9",
+    chatOverlay: "rgba(15,23,42,0.9)",
+    fontFamily: "Inter, sans-serif",
+    fontSize: "16",
+    chatPosition: "right",
   });
 
-  // Seed messages from initial API fetch; WS keeps them up-to-date after that.
-  // Use a ref guard so this only runs once — avoids infinite loop caused by
-  // initialMessages getting a new array reference on every render.
-  const seededRef = useRef(false);
+  // Delete confirmation state
+  const [deleteMessageId, setDeleteMessageId] = useState<string | null>(null);
+  const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
+
+  // Session code state
+  const [sessionCode, setSessionCode] = useState("");
+
+  // Track whether the WS SESSION_JOINED has already seeded the message list.
+  const wsJoinedRef = useRef(false);
+
+  // Seed from REST API (source of truth — includes hidden messages).
+  // Merge with any WS-only messages that arrived before REST finished loading.
   useEffect(() => {
-    if (!seededRef.current && initialMessages.length > 0) {
-      seededRef.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMessages(initialMessages);
+    if (initialMessages.length > 0) {
+      setMessages((prev) => {
+        if (prev.length === 0) return initialMessages;
+        // Merge: REST is the authoritative base (has hidden msgs too).
+        // Append any messages that arrived via WS and are not yet in the REST result.
+        const restIds = new Set(initialMessages.map((m) => m.id));
+        const wsOnly = prev.filter((m) => !restIds.has(m.id));
+        return [...initialMessages, ...wsOnly];
+      });
     }
   }, [initialMessages]);
 
@@ -164,13 +295,15 @@ export default function SessionManagePage({
       /* eslint-disable react-hooks/set-state-in-effect */
       setTitle(session.title);
       setIsActive(session.isActive);
-      setBackgroundType(session.backgroundType as 'color' | 'image' | 'video');
-      setBackgroundUrl(session.backgroundUrl || '');
-      const tc = (session.themeConfig as unknown as ThemeConfig) ?? ({} as ThemeConfig);
-      setBgObjectFit((tc.bgObjectFit) || 'cover');
-      setBgObjectPosition((tc.bgObjectPosition) || 'center center');
+      setBackgroundType(session.backgroundType as "color" | "image" | "video");
+      setBackgroundUrl(session.backgroundUrl || "");
+      setSessionCode(session.code);
+      const tc = parseThemeConfig(session.themeConfig);
+      setShowQrCode(tc.showQrCode !== false);
       setThemeConfig(tc);
-      const { hex, opacity } = parseOverlay(tc.chatOverlay || 'rgba(15,23,42,0.9)');
+      const { hex, opacity } = parseOverlay(
+        tc.chatOverlay || "rgba(15,23,42,0.9)",
+      );
       setOverlayColor(hex);
       setOverlayOpacity(opacity);
       /* eslint-enable react-hooks/set-state-in-effect */
@@ -178,36 +311,59 @@ export default function SessionManagePage({
   }, [session]);
 
   // ── WebSocket real-time updates ─────────────────────────────────────────
-  const [wsUrl] = useState(() => (typeof window !== 'undefined' ? getWsUrl() : ''));
+  const [wsUrl] = useState(() =>
+    typeof window !== "undefined" ? getWsUrl() : "",
+  );
   const { sendMessage: sendWsMessage, isConnected } = useWebSocket({
     url: wsUrl,
     onMessage: (wsMsg) => {
       switch (wsMsg.type) {
+        case WSMessageType.SESSION_JOINED:
+          // WS initial messages are visible-only. Use them only if REST hasn't
+          // seeded the list yet (handles the case where WS is faster than REST).
+          if (!wsJoinedRef.current) {
+            wsJoinedRef.current = true;
+            setMessages((prev) =>
+              prev.length === 0 ? wsMsg.payload.messages || [] : prev,
+            );
+          }
+          break;
         case WSMessageType.NEW_MESSAGE:
-          setMessages((prev) => [...prev, wsMsg.payload]);
+          setMessages((prev) => {
+            // Deduplicate — ignore if somehow already present.
+            if (prev.some((m) => m.id === wsMsg.payload.id)) return prev;
+            return [...prev, wsMsg.payload];
+          });
           break;
         case WSMessageType.MESSAGE_UPDATED:
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === wsMsg.payload.messageId ? { ...m, ...wsMsg.payload } : m
-            )
+              m.id === wsMsg.payload.messageId ? { ...m, ...wsMsg.payload } : m,
+            ),
           );
           break;
         case WSMessageType.MESSAGE_DELETED:
-          setMessages((prev) => prev.filter((m) => m.id !== wsMsg.payload.messageId));
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== wsMsg.payload.messageId),
+          );
+          break;
+        case WSMessageType.ALL_MESSAGES_CLEARED:
+          setMessages([]);
           break;
       }
     },
   });
 
-  // Join the session room as admin so WS server routes events to this client.
+  // Join the WS room as an observer (no isAdmin flag) so we receive all
+  // broadcast events without needing NextAuth cookie pre-auth on the WS server.
+  // Admin actions (hide/pin/delete) continue to go through the REST API.
   useEffect(() => {
-    if (isConnected && session) {
-      sendWsMessage({
-        type: WSMessageType.JOIN_SESSION,
-        payload: { sessionCode: session.code, isAdmin: true },
-      });
-    }
+    if (!isConnected || !session) return;
+    wsJoinedRef.current = false; // reset so SESSION_JOINED seeds on reconnect
+    sendWsMessage({
+      type: WSMessageType.JOIN_SESSION,
+      payload: { sessionCode: session.code },
+    });
   }, [isConnected, session, sendWsMessage]);
   // ────────────────────────────────────────────────────────────────────────
 
@@ -216,25 +372,36 @@ export default function SessionManagePage({
   };
 
   const handleSaveBackground = async () => {
-    await updateSession.mutateAsync({ 
-      backgroundType, 
+    await updateSession.mutateAsync({
+      backgroundType,
       backgroundUrl: backgroundUrl || null,
-      themeConfig: { ...themeConfig, bgObjectFit, bgObjectPosition },
+      themeConfig: { ...themeConfig },
     });
   };
 
   const handleSaveTheme = async () => {
     const chatOverlay = buildOverlay(overlayColor, overlayOpacity);
-    await updateSession.mutateAsync({ themeConfig: { ...themeConfig, chatOverlay } });
+    await updateSession.mutateAsync({
+      themeConfig: { ...themeConfig, chatOverlay },
+    });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     // Reset input so the same file can be re-selected after cancelling
-    e.target.value = '';
+    e.target.value = "";
 
-    if (type === 'image') {
+    // Auto-detect file type based on MIME type
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+
+    if (!isImage && !isVideo) {
+      toast.error("Please select a valid image or video file");
+      return;
+    }
+
+    if (isImage) {
       // Open crop dialog first — upload happens after the user confirms
       const dataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -247,51 +414,88 @@ export default function SessionManagePage({
     }
 
     // Videos upload directly (no crop step)
-    try {
-      const result = await uploadFile.mutateAsync({ file, type });
-      setBackgroundUrl(result.url);
-      setBackgroundType(type);
-      toast.success('File uploaded successfully');
-    } catch {
-      // Error handled by mutation
+    if (isVideo) {
+      try {
+        const result = await uploadFile.mutateAsync({ file, type: "video" });
+        setBackgroundUrl(result.url);
+        setBackgroundType("video");
+        // Auto-save so the presenter updates in real-time via WebSocket broadcast.
+        await updateSession.mutateAsync({
+          backgroundType: "video",
+          backgroundUrl: result.url,
+          themeConfig: { ...themeConfig },
+        });
+        toast.success("Video uploaded successfully");
+      } catch {
+        // Error handled by mutation
+      }
     }
   };
 
   const handleCropConfirm = async (blob: Blob, previewUrl: string) => {
     setCropDialogOpen(false);
-    setCropSrc('');
+    setCropSrc("");
     try {
-      const croppedFile = new File([blob], 'background.webp', { type: 'image/webp' });
-      const result = await uploadFile.mutateAsync({ file: croppedFile, type: 'image' });
+      const croppedFile = new File([blob], "background.webp", {
+        type: "image/webp",
+      });
+      const result = await uploadFile.mutateAsync({
+        file: croppedFile,
+        type: "image",
+      });
       // Revoke the temporary object URL after we have the server URL
       URL.revokeObjectURL(previewUrl);
       setBackgroundUrl(result.url);
-      setBackgroundType('image');
-      toast.success('Image uploaded successfully');
+      setBackgroundType("image");
+      // Auto-save so the presenter updates in real-time via WebSocket broadcast.
+      await updateSession.mutateAsync({
+        backgroundType: "image",
+        backgroundUrl: result.url,
+        themeConfig: { ...themeConfig },
+      });
+      toast.success("Image uploaded successfully");
     } catch {
       // Error handled by mutation
     }
   };
 
-  const handleToggleVisibility = async (messageId: string, isVisible: boolean) => {
-    await updateMessage.mutateAsync({ messageId, sessionId: id, updates: { isVisible } });
+  const handleToggleVisibility = async (
+    messageId: string,
+    isVisible: boolean,
+  ) => {
+    await updateMessage.mutateAsync({
+      messageId,
+      sessionId: id,
+      updates: { isVisible },
+    });
   };
 
   const handleTogglePin = async (messageId: string, isPinned: boolean) => {
-    await updateMessage.mutateAsync({ messageId, sessionId: id, updates: { isPinned } });
+    await updateMessage.mutateAsync({
+      messageId,
+      sessionId: id,
+      updates: { isPinned },
+    });
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
-    if (confirm('Are you sure you want to delete this message?')) {
-      await deleteMessage.mutateAsync({ messageId, sessionId: id });
-    }
+  const handleDeleteMessage = (messageId: string) => {
+    setDeleteMessageId(messageId);
+  };
+
+  const confirmDeleteMessage = async () => {
+    if (!deleteMessageId) return;
+    await deleteMessage.mutateAsync({
+      messageId: deleteMessageId,
+      sessionId: id,
+    });
+    setDeleteMessageId(null);
   };
 
   if (isLoading || !session) {
     return <PageLoading />;
   }
 
-  const joinUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${session.code}`;
+  const joinUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/join/${session.code}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -310,12 +514,18 @@ export default function SessionManagePage({
             </div>
             <div className="ml-auto flex items-center gap-2">
               {isConnected ? (
-                <Badge variant="secondary" className="gap-1.5 text-green-600 border-green-200">
+                <Badge
+                  variant="secondary"
+                  className="gap-1.5 text-green-600 border-green-200"
+                >
                   <Wifi className="h-3 w-3" />
                   Live
                 </Badge>
               ) : (
-                <Badge variant="outline" className="gap-1.5 text-muted-foreground">
+                <Badge
+                  variant="outline"
+                  className="gap-1.5 text-muted-foreground"
+                >
                   <WifiOff className="h-3 w-3" />
                   Connecting…
                 </Badge>
@@ -345,7 +555,8 @@ export default function SessionManagePage({
                       <div>
                         <CardTitle>Chat Moderation</CardTitle>
                         <CardDescription>
-                          Manage messages, hide inappropriate content, or pin important messages
+                          Manage messages, hide inappropriate content, or pin
+                          important messages
                         </CardDescription>
                       </div>
                     </div>
@@ -353,8 +564,12 @@ export default function SessionManagePage({
                     <div className="flex flex-wrap items-center gap-3 pt-2 border-t mt-2">
                       <div className="flex items-center gap-1.5 text-sm">
                         <Users className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-semibold">{session._count?.participants ?? 0}</span>
-                        <span className="text-muted-foreground">participants</span>
+                        <span className="font-semibold">
+                          {session._count?.participants ?? 0}
+                        </span>
+                        <span className="text-muted-foreground">
+                          participants
+                        </span>
                       </div>
                       <div className="w-px h-4 bg-border" />
                       <div className="flex items-center gap-1.5 text-sm">
@@ -363,12 +578,28 @@ export default function SessionManagePage({
                         <span className="text-muted-foreground">messages</span>
                       </div>
                       <div className="w-px h-4 bg-border" />
-                      <Badge variant={session.isActive ? 'default' : 'secondary'} className="text-xs">
-                        {session.isActive ? 'Active' : 'Inactive'}
+                      <Badge
+                        variant={session.isActive ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {session.isActive ? "Active" : "Inactive"}
                       </Badge>
-                      <div className="ml-auto">
+                      <div className="ml-auto flex items-center gap-2">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setDeleteAllConfirmOpen(true)}
+                          disabled={messages.length === 0}
+                          className="text-xs"
+                        >
+                          Delete All
+                        </Button>
                         <Link href={`/admin/sessions/${id}/participants`}>
-                          <Button variant="outline" size="sm" className="gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                          >
                             <Users className="h-3.5 w-3.5" />
                             View Participants
                             <ExternalLink className="h-3 w-3" />
@@ -384,8 +615,12 @@ export default function SessionManagePage({
                           key={message.id}
                           message={message}
                           showActions
-                          onToggleVisibility={(id, isVisible) => handleToggleVisibility(id, isVisible)}
-                          onTogglePin={(id, isPinned) => handleTogglePin(id, isPinned)}
+                          onToggleVisibility={(id, isVisible) =>
+                            handleToggleVisibility(id, isVisible)
+                          }
+                          onTogglePin={(id, isPinned) =>
+                            handleTogglePin(id, isPinned)
+                          }
                           onDelete={(id) => handleDeleteMessage(id)}
                         />
                       ))
@@ -403,7 +638,9 @@ export default function SessionManagePage({
                 <Card>
                   <CardHeader>
                     <CardTitle>Session Settings</CardTitle>
-                    <CardDescription>Configure basic session settings</CardDescription>
+                    <CardDescription>
+                      Configure basic session settings
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -420,7 +657,9 @@ export default function SessionManagePage({
                       <div className="space-y-0.5">
                         <Label>Session Status</Label>
                         <p className="text-sm text-muted-foreground">
-                          {isActive ? 'Session is active and accepting participants' : 'Session is inactive'}
+                          {isActive
+                            ? "Session is active and accepting participants"
+                            : "Session is inactive"}
                         </p>
                       </div>
                       <Switch
@@ -429,7 +668,34 @@ export default function SessionManagePage({
                       />
                     </div>
 
-                    <Button onClick={handleSaveBasicSettings} disabled={updateSession.isPending}>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Show QR Code on Presenter</Label>
+                        <p className="text-sm text-muted-foreground">
+                          {showQrCode
+                            ? "QR code and join code visible on presenter"
+                            : "QR code hidden on presenter"}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={showQrCode}
+                        onCheckedChange={async (v) => {
+                          setShowQrCode(v);
+                          setThemeConfig((prev) => ({
+                            ...prev,
+                            showQrCode: v,
+                          }));
+                          await updateSession.mutateAsync({
+                            themeConfig: { ...themeConfig, showQrCode: v },
+                          });
+                        }}
+                      />
+                    </div>
+
+                    <Button
+                      onClick={handleSaveBasicSettings}
+                      disabled={updateSession.isPending}
+                    >
                       {updateSession.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -448,14 +714,28 @@ export default function SessionManagePage({
                 <Card>
                   <CardHeader>
                     <CardTitle>Background</CardTitle>
-                    <CardDescription>Customize the presenter view background</CardDescription>
+                    <CardDescription>
+                      Customize the presenter view background
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label>Background Type</Label>
                       <Select
                         value={backgroundType}
-                        onValueChange={(value: 'color' | 'image' | 'video') => setBackgroundType(value)}
+                        onValueChange={async (
+                          value: "color" | "image" | "video",
+                        ) => {
+                          setBackgroundType(value);
+                          // Immediately broadcast the type change so the presenter
+                          // updates without requiring a manual "Save Background" click.
+                          await updateSession.mutateAsync({
+                            backgroundType: value,
+                            backgroundUrl:
+                              value === "color" ? null : backgroundUrl || null,
+                            themeConfig: { ...themeConfig },
+                          });
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -468,100 +748,51 @@ export default function SessionManagePage({
                       </Select>
                     </div>
 
-                    {backgroundType === 'image' && (
+                    {backgroundType === "image" && (
                       <div className="space-y-3">
                         <Label htmlFor="image-upload">Upload Image</Label>
                         <Input
                           id="image-upload"
                           type="file"
                           accept="image/*"
-                          onChange={(e) => handleFileUpload(e, 'image')}
+                          onChange={handleFileUpload}
                           disabled={uploadFile.isPending}
                         />
-
-                        {/* Fit + focal-point controls */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Image Fit</Label>
-                            <Select value={bgObjectFit} onValueChange={(v) => setBgObjectFit(v as 'cover' | 'contain' | 'fill')}>
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="cover">Cover (crop to fill)</SelectItem>
-                                <SelectItem value="contain">Contain (fit inside)</SelectItem>
-                                <SelectItem value="fill">Stretch to fill</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Focal Point</Label>
-                            <div className="grid grid-cols-3 gap-0.5 w-fit">
-                              {([
-                                ['left top','↖'],['center top','↑'],['right top','↗'],
-                                ['left center','←'],['center center','·'],['right center','→'],
-                                ['left bottom','↙'],['center bottom','↓'],['right bottom','↘'],
-                              ] as [string, string][]).map(([pos, arrow]) => (
-                                <button
-                                  key={pos}
-                                  type="button"
-                                  onClick={() => setBgObjectPosition(pos)}
-                                  title={pos}
-                                  className={`h-7 w-7 rounded text-sm flex items-center justify-center border transition-colors ${
-                                    bgObjectPosition === pos
-                                      ? 'bg-primary text-primary-foreground border-primary'
-                                      : 'bg-muted hover:bg-accent border-transparent'
-                                  }`}
-                                >
-                                  {arrow}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 16:9 preview matching the actual presenter screen */}
-                        {backgroundUrl && (
-                          <div
-                            className="w-full rounded-lg border overflow-hidden"
-                            style={{
-                              aspectRatio: '16/9',
-                              backgroundImage: `url(${backgroundUrl})`,
-                              backgroundSize: bgObjectFit === 'contain' ? 'contain' : bgObjectFit === 'fill' ? '100% 100%' : 'cover',
-                              backgroundPosition: bgObjectPosition,
-                              backgroundRepeat: 'no-repeat',
-                              backgroundColor: themeConfig.background,
-                            }}
-                          />
-                        )}
                       </div>
                     )}
 
-                    {backgroundType === 'video' && (
+                    {backgroundType === "video" && (
                       <div className="space-y-2">
                         <Label htmlFor="video-upload">Upload Video</Label>
                         <Input
                           id="video-upload"
                           type="file"
-                          accept="video/*"
-                          onChange={(e) => handleFileUpload(e, 'video')}
+                          accept="video/*,audio/*"
+                          onChange={handleFileUpload}
                           disabled={uploadFile.isPending}
                         />
                         {backgroundUrl && (
                           <div className="mt-2">
-                            <video src={backgroundUrl} className="w-full h-40 rounded-lg" controls />
+                            <video
+                              src={backgroundUrl}
+                              className="w-full h-40 rounded-lg"
+                              controls
+                            />
                           </div>
                         )}
                       </div>
                     )}
 
-                    {backgroundType === 'color' && (
+                    {backgroundType === "color" && (
                       <p className="text-sm text-muted-foreground">
                         Using theme background color
                       </p>
                     )}
 
-                    <Button onClick={handleSaveBackground} disabled={updateSession.isPending}>
+                    <Button
+                      onClick={handleSaveBackground}
+                      disabled={updateSession.isPending}
+                    >
                       {updateSession.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -573,6 +804,64 @@ export default function SessionManagePage({
                           Save Background
                         </>
                       )}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Session Code */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Session Code</CardTitle>
+                    <CardDescription>
+                      The code participants use to join this session
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
+                        value={sessionCode}
+                        onChange={(e) =>
+                          setSessionCode(
+                            e.target.value
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9-]/g, ""),
+                          )
+                        }
+                        placeholder="e.g. CONF2024"
+                        className="font-mono uppercase"
+                        maxLength={20}
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        title="Auto-generate code"
+                        onClick={() =>
+                          setSessionCode(
+                            Math.random()
+                              .toString(36)
+                              .slice(2, 8)
+                              .toUpperCase(),
+                          )
+                        }
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      3–20 characters, letters, numbers, and hyphens only
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        await updateSession.mutateAsync({ code: sessionCode });
+                      }}
+                      disabled={
+                        !sessionCode ||
+                        sessionCode === session?.code ||
+                        updateSession.isPending
+                      }
+                    >
+                      {updateSession.isPending ? "Saving…" : "Save Code"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -604,14 +893,28 @@ export default function SessionManagePage({
                         >
                           {/* Mini colour preview */}
                           <div className="h-14 flex items-end p-2 gap-1">
-                            <div className="h-4 w-4 rounded-full opacity-90" style={{ background: preset.theme.primary }} />
-                            <div className="h-3 w-3 rounded-full opacity-70" style={{ background: preset.theme.secondary }} />
+                            <div
+                              className="h-4 w-4 rounded-full opacity-90"
+                              style={{ background: preset.theme.primary }}
+                            />
+                            <div
+                              className="h-3 w-3 rounded-full opacity-70"
+                              style={{ background: preset.theme.secondary }}
+                            />
                           </div>
                           <div
                             className="px-2 py-1.5 text-left"
-                            style={{ background: buildOverlay(preset.overlay.hex, preset.overlay.opacity), color: preset.theme.text }}
+                            style={{
+                              background: buildOverlay(
+                                preset.overlay.hex,
+                                preset.overlay.opacity,
+                              ),
+                              color: preset.theme.text,
+                            }}
                           >
-                            <p className="text-xs font-semibold truncate">{preset.emoji} {preset.name}</p>
+                            <p className="text-xs font-semibold truncate">
+                              {preset.emoji} {preset.name}
+                            </p>
                           </div>
                         </button>
                       ))}
@@ -623,30 +926,59 @@ export default function SessionManagePage({
                 <Card>
                   <CardHeader>
                     <CardTitle>Presenter Screen</CardTitle>
-                    <CardDescription>Colors, typography, and stage background</CardDescription>
+                    <CardDescription>
+                      Colors, typography, and stage background
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
                     {/* Colors grid */}
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Colors</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                        Colors
+                      </p>
                       <div className="grid grid-cols-2 gap-4">
                         {[
-                          { id: 'primary-color', label: 'Primary', key: 'primary' as const },
-                          { id: 'secondary-color', label: 'Secondary / Accent', key: 'secondary' as const },
-                          { id: 'background-color', label: 'Stage Background', key: 'background' as const },
-                          { id: 'text-color', label: 'Text', key: 'text' as const },
+                          {
+                            id: "primary-color",
+                            label: "Primary",
+                            key: "primary" as const,
+                          },
+                          {
+                            id: "secondary-color",
+                            label: "Secondary / Accent",
+                            key: "secondary" as const,
+                          },
+                          {
+                            id: "background-color",
+                            label: "Stage Background",
+                            key: "background" as const,
+                          },
+                          {
+                            id: "text-color",
+                            label: "Text",
+                            key: "text" as const,
+                          },
                         ].map(({ id, label, key }) => (
                           <div key={id} className="space-y-1.5">
-                            <Label htmlFor={id} className="text-xs">{label}</Label>
+                            <Label htmlFor={id} className="text-xs">
+                              {label}
+                            </Label>
                             <div className="flex items-center gap-2">
                               <Input
                                 id={id}
                                 type="color"
                                 className="w-10 h-8 p-0.5 cursor-pointer rounded"
                                 value={themeConfig[key]}
-                                onChange={(e) => setThemeConfig({ ...themeConfig, [key]: e.target.value })}
+                                onChange={(e) =>
+                                  setThemeConfig({
+                                    ...themeConfig,
+                                    [key]: e.target.value,
+                                  })
+                                }
                               />
-                              <span className="text-xs font-mono text-muted-foreground">{themeConfig[key]}</span>
+                              <span className="text-xs font-mono text-muted-foreground">
+                                {themeConfig[key]}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -655,20 +987,33 @@ export default function SessionManagePage({
 
                     {/* Typography */}
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Typography</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                        Typography
+                      </p>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <Label className="text-xs">Font Family</Label>
                           <Select
-                            value={themeConfig.fontFamily || 'Inter, sans-serif'}
-                            onValueChange={(value) => setThemeConfig({ ...themeConfig, fontFamily: value })}
+                            value={
+                              themeConfig.fontFamily || "Inter, sans-serif"
+                            }
+                            onValueChange={(value) =>
+                              setThemeConfig({
+                                ...themeConfig,
+                                fontFamily: value,
+                              })
+                            }
                           >
                             <SelectTrigger className="h-9">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               {FONT_FAMILIES.map((f) => (
-                                <SelectItem key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                                <SelectItem
+                                  key={f.value}
+                                  value={f.value}
+                                  style={{ fontFamily: f.value }}
+                                >
                                   {f.label}
                                 </SelectItem>
                               ))}
@@ -676,7 +1021,9 @@ export default function SessionManagePage({
                           </Select>
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Font Size — {themeConfig.fontSize}px</Label>
+                          <Label className="text-xs">
+                            Font Size — {themeConfig.fontSize}px
+                          </Label>
                           <div className="pt-1">
                             <input
                               type="range"
@@ -684,11 +1031,17 @@ export default function SessionManagePage({
                               max="24"
                               step="1"
                               value={themeConfig.fontSize}
-                              onChange={(e) => setThemeConfig({ ...themeConfig, fontSize: e.target.value })}
+                              onChange={(e) =>
+                                setThemeConfig({
+                                  ...themeConfig,
+                                  fontSize: e.target.value,
+                                })
+                              }
                               className="w-full h-2 accent-primary cursor-pointer"
                             />
                             <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                              <span>12px</span><span>24px</span>
+                              <span>12px</span>
+                              <span>24px</span>
                             </div>
                           </div>
                         </div>
@@ -701,12 +1054,16 @@ export default function SessionManagePage({
                 <Card>
                   <CardHeader>
                     <CardTitle>Chat Panel</CardTitle>
-                    <CardDescription>Overlay appearance and position on screen</CardDescription>
+                    <CardDescription>
+                      Overlay appearance and position on screen
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
                     {/* Overlay */}
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Overlay Style</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                        Overlay Style
+                      </p>
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2 shrink-0">
                           <Input
@@ -715,12 +1072,16 @@ export default function SessionManagePage({
                             value={overlayColor}
                             onChange={(e) => setOverlayColor(e.target.value)}
                           />
-                          <span className="text-xs text-muted-foreground">Color</span>
+                          <span className="text-xs text-muted-foreground">
+                            Color
+                          </span>
                         </div>
                         <div className="flex-1 space-y-1">
                           <div className="flex justify-between text-xs text-muted-foreground">
                             <span>Opacity</span>
-                            <span className="font-medium">{Math.round(overlayOpacity * 100)}%</span>
+                            <span className="font-medium">
+                              {Math.round(overlayOpacity * 100)}%
+                            </span>
                           </div>
                           <input
                             type="range"
@@ -728,35 +1089,57 @@ export default function SessionManagePage({
                             max="1"
                             step="0.05"
                             value={overlayOpacity}
-                            onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
+                            onChange={(e) =>
+                              setOverlayOpacity(parseFloat(e.target.value))
+                            }
                             className="w-full h-2 accent-primary cursor-pointer"
                           />
                         </div>
                         {/* Swatch preview */}
                         <div
                           className="w-10 h-8 rounded border shrink-0"
-                          style={{ background: buildOverlay(overlayColor, overlayOpacity) }}
+                          style={{
+                            background: buildOverlay(
+                              overlayColor,
+                              overlayOpacity,
+                            ),
+                          }}
                         />
                       </div>
                     </div>
 
                     {/* Position */}
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Layout</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                        Layout
+                      </p>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <Label className="text-xs">Panel Position</Label>
                           <Select
                             value={themeConfig.chatPosition}
-                            onValueChange={(value) => setThemeConfig({ ...themeConfig, chatPosition: value as ThemeConfig['chatPosition'] })}
+                            onValueChange={(value) =>
+                              setThemeConfig({
+                                ...themeConfig,
+                                chatPosition:
+                                  value as ThemeConfig["chatPosition"],
+                              })
+                            }
                           >
                             <SelectTrigger className="h-9">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="right">Right sidebar</SelectItem>
+                              <SelectItem value="right">
+                                Right sidebar
+                              </SelectItem>
                               <SelectItem value="left">Left sidebar</SelectItem>
                               <SelectItem value="bottom">Bottom bar</SelectItem>
+                              <SelectItem value="top">Top bar</SelectItem>
+                              <SelectItem value="center">
+                                Center (floating)
+                              </SelectItem>
+                              <SelectItem value="full">Full screen</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -769,96 +1152,107 @@ export default function SessionManagePage({
                 <Card>
                   <CardHeader>
                     <CardTitle>Live Preview</CardTitle>
-                    <CardDescription>Faithful 16:9 replica of the actual presenter screen</CardDescription>
+                    <CardDescription>
+                      Updates instantly as you adjust the settings above
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div
-                      className="relative w-full overflow-hidden rounded-lg border"
-                      style={{ aspectRatio: '16/9', background: themeConfig.background }}
+                      className="relative w-full overflow-hidden rounded-lg border select-none"
+                      style={{
+                        aspectRatio: "16/9",
+                        background: themeConfig.background,
+                      }}
                     >
-                      {/* Background image/video preview */}
-                      {(backgroundType === 'image' || backgroundType === 'video') && backgroundUrl && (
-                        <div
-                          className="absolute inset-0"
-                          style={{
-                            backgroundImage: `url(${backgroundUrl})`,
-                            backgroundSize: bgObjectFit === 'contain' ? 'contain' : bgObjectFit === 'fill' ? '100% 100%' : 'cover',
-                            backgroundPosition: bgObjectPosition,
-                            backgroundRepeat: 'no-repeat',
-                          }}
-                        />
-                      )}
+                      {/* Stage background hint */}
+                      <div className="absolute inset-0 opacity-20 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
 
-                      {/* Session info — top left */}
-                      <div className="absolute top-[8%] left-[2%] z-10">
-                        <div
-                          className="bg-black/50 rounded p-[4px_8px] max-w-[35%]"
-                          style={{ color: themeConfig.text, fontFamily: themeConfig.fontFamily }}
-                        >
-                          <p className="text-[9px] font-bold leading-tight truncate">{title || session.title}</p>
-                          <div className="flex items-center gap-1 mt-[2px]">
-                            <div className="h-[5px] w-[5px] rounded-full bg-green-400" />
-                            <span className="text-[7px] opacity-80">Live</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* QR + Code — bottom left (mirrors presenter page) */}
-                      <div className="absolute bottom-[6%] left-[2%] z-10">
-                        <div className="bg-black/60 rounded-lg p-1.5 flex flex-col items-center gap-0.5">
-                          <div className="w-[22px] h-[22px] bg-white rounded-sm" />
-                          <p className="text-[6px] text-gray-300 leading-none">or code</p>
-                          <code className="text-[8px] font-bold text-white tracking-widest">{session.code}</code>
-                        </div>
-                      </div>
-
-                      {/* Chat panel */}
+                      {/* Title badge */}
                       <div
-                        className={`absolute flex flex-col ${
-                          themeConfig.chatPosition === 'right'
-                            ? 'right-0 top-0 bottom-0 w-[28%]'
-                            : themeConfig.chatPosition === 'left'
-                            ? 'left-0 top-0 bottom-0 w-[28%]'
-                            : 'bottom-0 left-0 right-0 h-[38%]'
-                        }`}
+                        className="absolute top-2 left-2 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
                         style={{
-                          background: buildOverlay(overlayColor, overlayOpacity),
-                          fontFamily: themeConfig.fontFamily,
+                          background: "rgba(0,0,0,0.55)",
                           color: themeConfig.text,
                         }}
                       >
-                        <div className="px-2 py-1 border-b border-white/10">
-                          <p className="text-[8px] font-bold">Chat</p>
-                          <p className="text-[7px] opacity-60">3 messages</p>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                        <span className="truncate max-w-[120px]">
+                          {session.title}
+                        </span>
+                      </div>
+
+                      {/* Chat overlay panel */}
+                      <div
+                        className={`absolute flex flex-col ${
+                          themeConfig.chatPosition === "right"
+                            ? "right-0 top-0 bottom-0 w-[28%]"
+                            : themeConfig.chatPosition === "left"
+                              ? "left-0 top-0 bottom-0 w-[28%]"
+                              : themeConfig.chatPosition === "top"
+                                ? "top-0 left-0 right-0 h-[30%]"
+                                : themeConfig.chatPosition === "full"
+                                  ? "inset-0"
+                                  : themeConfig.chatPosition === "center"
+                                    ? "top-[10%] left-[20%] right-[20%] bottom-[10%] rounded-lg"
+                                    : "bottom-0 left-0 right-0 h-[30%]"
+                        }`}
+                        style={{
+                          background: buildOverlay(
+                            overlayColor,
+                            overlayOpacity,
+                          ),
+                          color: themeConfig.text,
+                          fontFamily: themeConfig.fontFamily,
+                        }}
+                      >
+                        <div className="px-2 py-1 border-b border-white/10 flex-shrink-0 flex items-center justify-between">
+                          <span className="font-bold text-[9px] tracking-wide">
+                            CHAT
+                          </span>
+                          <span className="opacity-40 text-[8px]">
+                            3 messages
+                          </span>
                         </div>
-                        <div className="flex-1 overflow-hidden p-1.5 space-y-1.5">
+                        <div className="flex-1 p-1.5 space-y-1 overflow-hidden">
                           {[
-                            { name: 'Alice', text: 'Hello everyone! 👋' },
-                            { name: 'Bob', text: 'Great presentation!' },
-                            { name: 'Carol', text: 'Love the theme ✨' },
-                          ].map((msg) => (
-                            <div key={msg.name} className="flex items-start gap-1">
-                              <div
-                                className="h-[14px] w-[14px] rounded-full flex-shrink-0 flex items-center justify-center text-[6px] font-bold text-white"
-                                style={{ background: themeConfig.primary }}
-                              >
-                                {msg.name[0]}
-                              </div>
-                              <div>
-                                <span className="text-[7px] font-semibold leading-none block" style={{ color: themeConfig.primary }}>
-                                  {msg.name}
-                                </span>
-                                <p className="text-[7px] leading-tight opacity-90 mt-[1px]">{msg.text}</p>
-                              </div>
+                            { name: "Alice", text: "Hello everyone! 👋" },
+                            { name: "Bob", text: "Great presentation!" },
+                            { name: "Carol", text: "Can you explain more?" },
+                          ].map((m, i) => (
+                            <div
+                              key={i}
+                              className="rounded px-1.5 py-1 text-[8px] leading-tight"
+                              style={{ background: "rgba(255,255,255,0.07)" }}
+                            >
+                              <span className="opacity-55 font-semibold mr-1">
+                                {m.name}
+                              </span>
+                              <span>{m.text}</span>
                             </div>
                           ))}
                         </div>
+                      </div>
+
+                      {/* Primary color accent dots */}
+                      <div className="absolute bottom-2 right-2 flex gap-1">
+                        <div
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: themeConfig.primary }}
+                        />
+                        <div
+                          className="h-2 w-2 rounded-full opacity-60"
+                          style={{ background: themeConfig.secondary }}
+                        />
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Button onClick={handleSaveTheme} disabled={updateSession.isPending} className="w-full">
+                <Button
+                  onClick={handleSaveTheme}
+                  disabled={updateSession.isPending}
+                  className="w-full"
+                >
                   {updateSession.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -889,9 +1283,70 @@ export default function SessionManagePage({
           imageSrc={cropSrc}
           aspect={16 / 9}
           onConfirm={handleCropConfirm}
-          onClose={() => { setCropDialogOpen(false); setCropSrc(''); }}
+          onClose={() => {
+            setCropDialogOpen(false);
+            setCropSrc("");
+          }}
         />
       )}
+
+      {/* Delete All Messages Confirmation Dialog */}
+      <AlertDialog
+        open={deleteAllConfirmOpen}
+        onOpenChange={setDeleteAllConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete All Messages?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all {messages.length} messages in
+              this session. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                await deleteAllMessages.mutateAsync({ sessionId: id });
+                setDeleteAllConfirmOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete message confirmation dialog */}
+      <Dialog
+        open={!!deleteMessageId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteMessageId(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Message</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this message? This action cannot
+              be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteMessageId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteMessage}
+              disabled={deleteMessage.isPending}
+            >
+              {deleteMessage.isPending ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

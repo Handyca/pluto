@@ -4,8 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminLayout } from '@/components/admin-layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Activity, Wifi, Users, RefreshCw, Radio, Server } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Activity, Wifi, Users, RefreshCw, Radio, Server, Unplug, Settings2, Info, Globe, CheckCircle2, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 
 interface RoomStats {
   sessionId: string;
@@ -17,13 +24,19 @@ interface WsStats {
   available: boolean;
   totalConnections: number;
   activeRooms: number;
+  queuedMessages?: number;
+  isPaused: boolean;
+  logLevel: string;
+  serverPort: number | null;
+  serverUrl: string | null;
+  internalUrl: string | null;
   rooms: RoomStats[];
 }
 
 interface ChangeEntry {
   time: Date;
   message: string;
-  type: 'up' | 'down' | 'info';
+  type: 'up' | 'down' | 'info' | 'warn';
 }
 
 const MAX_LOG = 100;
@@ -35,6 +48,10 @@ export default function WebSocketMonitorPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [log, setLog] = useState<ChangeEntry[]>([]);
+  const [actionPending, setActionPending] = useState(false);
+  // URL configuration
+  const [urlInput, setUrlInput] = useState('');
+  const [urlSaving, setUrlSaving] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const pushLog = (message: string, type: ChangeEntry['type'] = 'info') => {
@@ -62,9 +79,15 @@ export default function WebSocketMonitorPage() {
           const roomDelta = next.activeRooms - prev.activeRooms;
           if (roomDelta > 0) pushLog(`+${roomDelta} session room${roomDelta > 1 ? 's' : ''} opened`, 'up');
           if (roomDelta < 0) pushLog(`${Math.abs(roomDelta)} session room${Math.abs(roomDelta) > 1 ? 's' : ''} closed`, 'down');
+          if (prev.isPaused !== next.isPaused)
+            pushLog(next.isPaused ? '⏸ Server paused' : '▶ Server resumed', next.isPaused ? 'warn' : 'up');
+          if (prev.internalUrl !== next.internalUrl && next.internalUrl)
+            pushLog(`🔗 WS URL updated to ${next.internalUrl}`, 'info');
         } else {
           pushLog('Monitor started — polling every 5 s', 'info');
         }
+        // Initialise URL input with the current internal URL on first load
+        if (!prev && next.internalUrl) setUrlInput(next.internalUrl);
         return next;
       });
       setLastUpdated(new Date());
@@ -88,7 +111,83 @@ export default function WebSocketMonitorPage() {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [log]);
 
-  const logColor = { up: 'text-green-400', down: 'text-red-400', info: 'text-slate-400' } as const;
+  const sendAction = async (action: string, extra?: Record<string, string>) => {
+    setActionPending(true);
+    try {
+      const res = await fetch('/api/admin/websocket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error ?? 'Action failed');
+      const next: WsStats = { ...body.data, available: true };
+      setStats(next);
+      setLastUpdated(new Date());
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg);
+      pushLog(`Action error: ${msg}`, 'down');
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const handlePauseToggle = async (checked: boolean) => {
+    await sendAction(checked ? 'pause' : 'resume');
+    pushLog(checked ? '⏸ Server paused by admin' : '▶ Server resumed by admin', checked ? 'warn' : 'up');
+    toast.success(checked ? 'WebSocket server paused' : 'WebSocket server resumed');
+  };
+
+  const handleDisconnectAll = async () => {
+    await sendAction('disconnect_all');
+    pushLog('🔌 All clients disconnected by admin', 'warn');
+    toast.success('All clients disconnected');
+  };
+
+  const handleLogLevel = async (level: string) => {
+    await sendAction('set_log_level', { logLevel: level });
+    pushLog(`📝 Log level changed to: ${level}`, 'info');
+    toast.success(`Log level set to ${level}`);
+  };
+
+  const handleUpdateUrl = async () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    setUrlSaving(true);
+    try {
+      const res = await fetch('/api/admin/websocket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_url', internalUrl: trimmed }),
+      });
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error ?? 'Failed to update URL');
+      const next: WsStats = { ...body.data };
+      setStats(next);
+      setLastUpdated(new Date());
+      if (body.data.available) {
+        pushLog(`🔗 WS server URL updated → ${trimmed}`, 'up');
+        toast.success('WS server URL updated — connection verified ✓');
+      } else {
+        pushLog(`⚠️ URL saved but server at ${trimmed} is unreachable`, 'warn');
+        toast.warning('URL saved but server is not reachable — check the address');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg);
+      pushLog(`URL update error: ${msg}`, 'down');
+    } finally {
+      setUrlSaving(false);
+    }
+  };
+
+  const logColor = {
+    up: 'text-green-400',
+    down: 'text-red-400',
+    info: 'text-slate-400',
+    warn: 'text-yellow-400',
+  } as const;
 
   return (
     <AdminLayout>
@@ -103,7 +202,7 @@ export default function WebSocketMonitorPage() {
                 <div>
                   <h1 className="text-2xl font-bold">WebSocket Monitor</h1>
                   <p className="text-sm text-muted-foreground">
-                    Live connection and session room stats
+                    Live connection stats, server controls and settings
                     {lastUpdated && (
                       <span className="ml-2 text-xs">
                         · updated {formatDistanceToNow(lastUpdated, { addSuffix: true })}
@@ -137,14 +236,27 @@ export default function WebSocketMonitorPage() {
             </div>
           )}
 
+          {/* Status cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-6 flex items-center gap-4">
-                <div className={`h-12 w-12 rounded-full flex items-center justify-center shrink-0 ${stats == null ? 'bg-muted' : stats.available ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                  <Server className={`h-6 w-6 ${stats == null ? 'text-muted-foreground' : stats.available ? 'text-green-500' : 'text-red-500'}`} />
+                <div className={`h-12 w-12 rounded-full flex items-center justify-center shrink-0 ${
+                  stats == null ? 'bg-muted' :
+                  !stats.available ? 'bg-red-500/10' :
+                  stats.isPaused ? 'bg-yellow-500/10' :
+                  'bg-green-500/10'
+                }`}>
+                  <Server className={`h-6 w-6 ${
+                    stats == null ? 'text-muted-foreground' :
+                    !stats.available ? 'text-red-500' :
+                    stats.isPaused ? 'text-yellow-500' :
+                    'text-green-500'
+                  }`} />
                 </div>
                 <div>
-                  <p className="text-xl font-bold">{stats == null ? '…' : stats.available ? 'Running' : 'Not available'}</p>
+                  <p className="text-xl font-bold">
+                    {stats == null ? '…' : !stats.available ? 'Not available' : stats.isPaused ? 'Paused' : 'Running'}
+                  </p>
                   <p className="text-sm text-muted-foreground">Server status</p>
                 </div>
               </CardContent>
@@ -175,6 +287,187 @@ export default function WebSocketMonitorPage() {
             </Card>
           </div>
 
+          {/* Server Controls + Connection Settings side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Server Controls */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>Server Controls</CardTitle>
+                </div>
+                <CardDescription>Pause the server or disconnect all active clients</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="pause-toggle" className="text-sm font-medium">
+                      Server Active
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {stats?.isPaused
+                        ? 'All clients disconnected — new joins rejected'
+                        : 'Accepting connections normally'}
+                    </p>
+                  </div>
+                  <Switch
+                    id="pause-toggle"
+                    checked={stats ? !stats.isPaused : true}
+                    disabled={!stats?.available || actionPending}
+                    onCheckedChange={(checked) => handlePauseToggle(!checked)}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Disconnect All Clients</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Terminates every active WS connection. Server stays running — clients can reconnect.
+                  </p>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-2"
+                    disabled={!stats?.available || (stats?.totalConnections ?? 0) === 0 || actionPending}
+                    onClick={handleDisconnectAll}
+                  >
+                    <Unplug className="h-4 w-4" />
+                    Disconnect all ({stats?.totalConnections ?? 0})
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Connection Settings */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>Connection Settings</CardTitle>
+                </div>
+                <CardDescription>Runtime configuration and current WS endpoint</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-muted-foreground">WS Endpoint</span>
+                    <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                      {stats?.serverUrl ?? '—'}
+                    </code>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-muted-foreground">Dedicated Port</span>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {stats?.serverPort ? `${stats.serverPort}` : 'Shared (same as HTTP)'}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-muted-foreground">Queued messages</span>
+                    <Badge variant="secondary" className="tabular-nums">
+                      {stats?.queuedMessages ?? 0}
+                    </Badge>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Log Level</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Changes server output verbosity at runtime (no restart needed)
+                  </p>
+                  <Select
+                    value={stats?.logLevel ?? 'info'}
+                    disabled={!stats?.available || actionPending}
+                    onValueChange={handleLogLevel}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="debug">debug — very verbose</SelectItem>
+                      <SelectItem value="info">info — normal</SelectItem>
+                      <SelectItem value="warn">warn — warnings + errors only</SelectItem>
+                      <SelectItem value="error">error — errors only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* WS Server URL Configuration */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-muted-foreground" />
+                <CardTitle>WebSocket Server URL</CardTitle>
+              </div>
+              <CardDescription>
+                The HTTP management URL Next.js uses to reach the standalone WS server.
+                Update this when the WS server moves to a different host or port without redeploying.
+                The change is saved to <code className="text-xs bg-muted px-1 rounded">cache/ws-config.json</code> and takes effect immediately.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1.5 p-3 rounded-lg bg-muted/40">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Internal URL</p>
+                  <code className="font-mono text-sm break-all">{stats?.internalUrl ?? '—'}</code>
+                  <p className="text-xs text-muted-foreground mt-1">Used by Next.js API routes to call the WS management API</p>
+                </div>
+                <div className="space-y-1.5 p-3 rounded-lg bg-muted/40">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Public WS Endpoint</p>
+                  <code className="font-mono text-sm break-all">{stats?.serverUrl ?? '—'}</code>
+                  <p className="text-xs text-muted-foreground mt-1">URL browsers connect to — set <code className="bg-muted px-1 rounded">NEXT_PUBLIC_WS_URL</code> for Vercel</p>
+                </div>
+              </div>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-2 text-sm">
+                {stats == null ? null : stats.available ? (
+                  <><CheckCircle2 className="h-4 w-4 text-green-500" /><span className="text-green-600 dark:text-green-400">Server reachable</span></>
+                ) : (
+                  <><XCircle className="h-4 w-4 text-red-500" /><span className="text-red-600 dark:text-red-400">Server unreachable at current URL</span></>
+                )}
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Update Internal URL</Label>
+                <p className="text-xs text-muted-foreground">
+                  Enter the base HTTP URL of the WS server (e.g. <code className="bg-muted px-1 rounded">http://localhost:3001</code> or
+                  {' '}<code className="bg-muted px-1 rounded">https://ws.myapp.com</code>). The WS endpoint and management API must both be on this host.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="http://localhost:3001"
+                    className="font-mono text-sm flex-1"
+                    onKeyDown={(e) => e.key === 'Enter' && handleUpdateUrl()}
+                  />
+                  <Button
+                    onClick={handleUpdateUrl}
+                    disabled={urlSaving || !urlInput.trim() || urlInput.trim() === stats?.internalUrl}
+                    className="shrink-0"
+                  >
+                    {urlSaving ? 'Testing…' : 'Save & Test'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  💡 <strong>Vercel deployment:</strong> set{' '}
+                  <code className="bg-muted px-1 rounded">WS_INTERNAL_URL</code> and{' '}
+                  <code className="bg-muted px-1 rounded">NEXT_PUBLIC_WS_URL</code> in your Vercel project
+                  environment variables instead of using this form.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Active Rooms */}
           <Card>
             <CardHeader>
               <CardTitle>Active Session Rooms</CardTitle>
@@ -216,12 +509,13 @@ export default function WebSocketMonitorPage() {
             </CardContent>
           </Card>
 
+          {/* Change Log */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Change Log</CardTitle>
-                  <CardDescription>Connection and room events detected between polls</CardDescription>
+                  <CardDescription>Connection, room and admin action events</CardDescription>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setLog([])}>Clear</Button>
               </div>
@@ -244,3 +538,4 @@ export default function WebSocketMonitorPage() {
     </AdminLayout>
   );
 }
+

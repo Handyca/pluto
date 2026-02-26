@@ -64,6 +64,8 @@ model Message {
 
   @@index([sessionId, createdAt])
   @@index([participantId])
+  // Composite index for the common participant query: fetch visible messages by session
+  @@index([sessionId, isVisible, createdAt])
   @@map("messages")
 }
 

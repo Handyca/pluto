@@ -1,25 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Message } from '@/types';
 import { toast } from 'sonner';
-
-// Helper function to handle fetch errors
-async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  
-  if (!res.ok) {
-    let errorMessage = `HTTP ${res.status}`;
-    try {
-      const error = await res.json();
-      errorMessage = error.error || error.message || errorMessage;
-    } catch {
-      errorMessage = res.statusText || errorMessage;
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data = await res.json();
-  return data;
-}
+import { fetchJSON } from '@/lib/api';
 
 // Fetch messages for a session
 export function useMessages(sessionId: string, token?: string) {
@@ -156,6 +138,24 @@ export function useMediaAssets(type?: 'IMAGE' | 'VIDEO' | 'STICKER') {
       const data = await fetchJSON<{ success: boolean; data: Record<string, unknown>[] }>(url);
       if (!data.success) throw new Error('Failed to fetch media assets');
       return data.data;
+    },
+  });
+}
+
+export function useDeleteAllMessages() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ sessionId }: { sessionId: string }) => {
+      const data = await fetchJSON<{ success: boolean }>(`/api/messages?sessionId=${sessionId}`, { method: 'DELETE' });
+      if (!data.success) throw new Error('Failed to delete messages');
+      return { sessionId };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.setQueryData(['messages', sessionId], []);
+      toast.success('All messages deleted');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete messages');
     },
   });
 }

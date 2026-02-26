@@ -2,18 +2,12 @@
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Copy, QrCode } from 'lucide-react';
+import { Copy, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEffect, useState } from 'react';
 import QRCodeLib from 'qrcode';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import Image from 'next/image';
+import Link from 'next/link';
 
 interface SessionCodeDisplayProps {
   code: string;
@@ -22,10 +16,11 @@ interface SessionCodeDisplayProps {
 
 export function SessionCodeDisplay({ code, joinUrl }: SessionCodeDisplayProps) {
   const [qrCode, setQrCode] = useState<string>('');
+  const presenterUrl = joinUrl.replace('/join/', '/presenter/');
 
   useEffect(() => {
     QRCodeLib.toDataURL(joinUrl, {
-      width: 300,
+      width: 280,
       margin: 2,
       color: {
         dark: '#000000',
@@ -66,31 +61,31 @@ export function SessionCodeDisplay({ code, joinUrl }: SessionCodeDisplayProps) {
         </div>
       </div>
 
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button variant="outline" className="w-full">
-            <QrCode className="h-4 w-4 mr-2" />
-            Show QR Code
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>QR Code</DialogTitle>
-            <DialogDescription>
-              Participants can scan this code to join the session
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-center p-4">
-            {qrCode && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrCode} alt="QR Code" className="w-full max-w-xs" />
-            )}
+      {/* QR Code — always visible */}
+      {qrCode && (
+        <div className="flex flex-col items-center gap-2 pt-1">
+          <p className="text-xs text-muted-foreground self-start">Scan to join</p>
+          <div className="rounded-lg overflow-hidden border bg-white p-2">
+            <Image
+              src={qrCode}
+              alt="QR Code"
+              width={220}
+              height={220}
+              unoptimized
+              className="block"
+            />
           </div>
-          <div className="text-center">
-            <code className="text-2xl font-bold">{code}</code>
-          </div>
-        </DialogContent>
-      </Dialog>
+          <code className="text-lg font-bold tracking-widest">{code}</code>
+        </div>
+      )}
+
+      {/* Presenter link */}
+      <Button asChild variant="default" className="w-full gap-2">
+        <Link href={presenterUrl} target="_blank" rel="noopener noreferrer">
+          <Monitor className="h-4 w-4" />
+          Open Presenter View
+        </Link>
+      </Button>
     </Card>
   );
 }
