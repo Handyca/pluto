@@ -6,6 +6,7 @@ import { join } from 'path';
 import { isValidImageType, isValidVideoType, resolveFileMime } from '@/lib/utils';
 import { verifyParticipantToken } from '@/lib/participant-auth';
 import { MediaType } from '@prisma/client';
+import sharp from 'sharp';
 
 export const runtime = 'nodejs';
 
@@ -116,16 +117,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique filename — use built-in crypto so there is no ESM dep.
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
-    const filename = `${crypto.randomUUID()}.${ext}`;
     const uploadDir = join(process.cwd(), 'public', 'uploads', type);
-    
-    // Ensure upload directory exists
     await mkdir(uploadDir, { recursive: true });
 
-    // Save file
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    let buffer = Buffer.from(bytes);
+    let finalMime = resolvedMime || file.type;
+    let ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
+
+    // For images: resize to max 1920×1080, strip metadata, convert to WebP.
+    // This keeps file sizes small and ensures consistent quality on screen.
+    if (isImage) {
+      buffer = await sharp(buffer)
+        .rotate() // auto-orient from EXIF
+        .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer();
+      finalMime = 'image/webp';
+      ext = 'webp';
+    }
+
+    const filename = `${crypto.randomUUID()}.${ext}`;
     const filepath = join(uploadDir, filename);
     await writeFile(filepath, buffer);
 
@@ -135,8 +147,8 @@ export async function POST(request: NextRequest) {
         type: type === 'image' ? 'IMAGE' : type === 'video' ? 'VIDEO' : 'STICKER',
         url: `/uploads/${type}/${filename}`,
         filename,
-        mimeType: resolvedMime || file.type,
-        size: file.size,
+        mimeType: finalMime,
+        size: buffer.length,
         uploadedBy: session?.user?.id ?? null,
       },
     });

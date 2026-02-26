@@ -16,6 +16,8 @@ export interface ThemeConfig {
   chatPosition: 'left' | 'right' | 'bottom';
   chatMode?: 'chat' | 'wordCloud';
   showTitle?: boolean;
+  bgObjectFit?: 'cover' | 'contain' | 'fill';
+  bgObjectPosition?: string;
 }
 
 // WebSocket message types

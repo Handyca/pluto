@@ -9,7 +9,7 @@ import { useWebSocket } from '@/lib/hooks/use-websocket';
 import { getWsUrl } from '@/lib/utils';
 import { WSMessageType, Message, ThemeConfig } from '@/types';
 import { AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
+
 import QRCodeLib from 'qrcode';
 
 export default function PresenterPage({
@@ -174,12 +174,14 @@ export default function PresenterPage({
           <VideoBackground src={backgroundUrl} />
         )}
         {backgroundType === 'image' && backgroundUrl && (
-          <Image 
-            src={backgroundUrl} 
-            alt="Background" 
-            fill
-            className="object-cover"
-            priority
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${backgroundUrl})`,
+              backgroundSize: themeConfig?.bgObjectFit === 'contain' ? 'contain' : themeConfig?.bgObjectFit === 'fill' ? '100% 100%' : 'cover',
+              backgroundPosition: themeConfig?.bgObjectPosition || 'center center',
+              backgroundRepeat: 'no-repeat',
+            }}
           />
         )}
       </div>

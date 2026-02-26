@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MessageBubble } from '@/components/message-bubble';
 import { SessionCodeDisplay } from '@/components/session-code-display';
+import { ImageCropDialog } from '@/components/image-crop-dialog';
 import {
   ArrowLeft,
   Save,
@@ -127,6 +128,12 @@ export default function SessionManagePage({
   const [isActive, setIsActive] = useState(true);
   const [backgroundType, setBackgroundType] = useState<'color' | 'image' | 'video'>('color');
   const [backgroundUrl, setBackgroundUrl] = useState('');
+  const [bgObjectFit, setBgObjectFit] = useState<'cover' | 'contain' | 'fill'>('cover');
+  const [bgObjectPosition, setBgObjectPosition] = useState('center center');
+
+  // Image crop dialog state
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState('');
   const [overlayColor, setOverlayColor] = useState('#0f172a');
   const [overlayOpacity, setOverlayOpacity] = useState(0.9);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>({
@@ -160,6 +167,8 @@ export default function SessionManagePage({
       setBackgroundType(session.backgroundType as 'color' | 'image' | 'video');
       setBackgroundUrl(session.backgroundUrl || '');
       const tc = (session.themeConfig as unknown as ThemeConfig) ?? ({} as ThemeConfig);
+      setBgObjectFit((tc.bgObjectFit) || 'cover');
+      setBgObjectPosition((tc.bgObjectPosition) || 'center center');
       setThemeConfig(tc);
       const { hex, opacity } = parseOverlay(tc.chatOverlay || 'rgba(15,23,42,0.9)');
       setOverlayColor(hex);
@@ -210,6 +219,7 @@ export default function SessionManagePage({
     await updateSession.mutateAsync({ 
       backgroundType, 
       backgroundUrl: backgroundUrl || null,
+      themeConfig: { ...themeConfig, bgObjectFit, bgObjectPosition },
     });
   };
 
@@ -221,12 +231,43 @@ export default function SessionManagePage({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Reset input so the same file can be re-selected after cancelling
+    e.target.value = '';
 
+    if (type === 'image') {
+      // Open crop dialog first — upload happens after the user confirms
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.readAsDataURL(file);
+      });
+      setCropSrc(dataUrl);
+      setCropDialogOpen(true);
+      return;
+    }
+
+    // Videos upload directly (no crop step)
     try {
       const result = await uploadFile.mutateAsync({ file, type });
       setBackgroundUrl(result.url);
       setBackgroundType(type);
       toast.success('File uploaded successfully');
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const handleCropConfirm = async (blob: Blob, previewUrl: string) => {
+    setCropDialogOpen(false);
+    setCropSrc('');
+    try {
+      const croppedFile = new File([blob], 'background.webp', { type: 'image/webp' });
+      const result = await uploadFile.mutateAsync({ file: croppedFile, type: 'image' });
+      // Revoke the temporary object URL after we have the server URL
+      URL.revokeObjectURL(previewUrl);
+      setBackgroundUrl(result.url);
+      setBackgroundType('image');
+      toast.success('Image uploaded successfully');
     } catch {
       // Error handled by mutation
     }
@@ -428,7 +469,7 @@ export default function SessionManagePage({
                     </div>
 
                     {backgroundType === 'image' && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <Label htmlFor="image-upload">Upload Image</Label>
                         <Input
                           id="image-upload"
@@ -437,11 +478,61 @@ export default function SessionManagePage({
                           onChange={(e) => handleFileUpload(e, 'image')}
                           disabled={uploadFile.isPending}
                         />
-                        {backgroundUrl && (
-                          <div className="mt-2">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={backgroundUrl} alt="Background preview" className="w-full h-40 object-cover rounded-lg" />
+
+                        {/* Fit + focal-point controls */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Image Fit</Label>
+                            <Select value={bgObjectFit} onValueChange={(v) => setBgObjectFit(v as 'cover' | 'contain' | 'fill')}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="cover">Cover (crop to fill)</SelectItem>
+                                <SelectItem value="contain">Contain (fit inside)</SelectItem>
+                                <SelectItem value="fill">Stretch to fill</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Focal Point</Label>
+                            <div className="grid grid-cols-3 gap-0.5 w-fit">
+                              {([
+                                ['left top','↖'],['center top','↑'],['right top','↗'],
+                                ['left center','←'],['center center','·'],['right center','→'],
+                                ['left bottom','↙'],['center bottom','↓'],['right bottom','↘'],
+                              ] as [string, string][]).map(([pos, arrow]) => (
+                                <button
+                                  key={pos}
+                                  type="button"
+                                  onClick={() => setBgObjectPosition(pos)}
+                                  title={pos}
+                                  className={`h-7 w-7 rounded text-sm flex items-center justify-center border transition-colors ${
+                                    bgObjectPosition === pos
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-muted hover:bg-accent border-transparent'
+                                  }`}
+                                >
+                                  {arrow}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 16:9 preview matching the actual presenter screen */}
+                        {backgroundUrl && (
+                          <div
+                            className="w-full rounded-lg border overflow-hidden"
+                            style={{
+                              aspectRatio: '16/9',
+                              backgroundImage: `url(${backgroundUrl})`,
+                              backgroundSize: bgObjectFit === 'contain' ? 'contain' : bgObjectFit === 'fill' ? '100% 100%' : 'cover',
+                              backgroundPosition: bgObjectPosition,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundColor: themeConfig.background,
+                            }}
+                          />
                         )}
                       </div>
                     )}
@@ -687,11 +778,14 @@ export default function SessionManagePage({
                     >
                       {/* Background image/video preview */}
                       {(backgroundType === 'image' || backgroundType === 'video') && backgroundUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={backgroundUrl}
-                          alt="Background"
-                          className="absolute inset-0 w-full h-full object-cover"
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            backgroundImage: `url(${backgroundUrl})`,
+                            backgroundSize: bgObjectFit === 'contain' ? 'contain' : bgObjectFit === 'fill' ? '100% 100%' : 'cover',
+                            backgroundPosition: bgObjectPosition,
+                            backgroundRepeat: 'no-repeat',
+                          }}
                         />
                       )}
 
@@ -787,6 +881,17 @@ export default function SessionManagePage({
           </div>
         </div>
       </div>
+
+      {/* Image crop dialog */}
+      {cropDialogOpen && cropSrc && (
+        <ImageCropDialog
+          open={cropDialogOpen}
+          imageSrc={cropSrc}
+          aspect={16 / 9}
+          onConfirm={handleCropConfirm}
+          onClose={() => { setCropDialogOpen(false); setCropSrc(''); }}
+        />
+      )}
     </div>
   );
 }

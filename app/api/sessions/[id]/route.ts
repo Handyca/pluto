@@ -10,7 +10,7 @@ const updateSessionSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   isActive: z.boolean().optional(),
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
-  backgroundUrl: z.string().url().optional().nullable(),
+  backgroundUrl: z.string().optional().nullable(),
   themeConfig: z.record(z.string(), z.any()).optional(),
 });
 

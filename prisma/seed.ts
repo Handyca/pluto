@@ -26,8 +26,10 @@ async function main() {
   console.log('✅ Admin user created:', admin.email);
 
   // Create sample session
-  const session = await prisma.session.create({
-    data: {
+  const session = await prisma.session.upsert({
+    where: { code: 'DEMO01' },
+    update: {},
+    create: {
       title: 'Welcome to Pluto',
       code: 'DEMO01',
       adminId: admin.id,
@@ -56,16 +58,19 @@ async function main() {
   ];
 
   for (const sticker of stickers) {
-    await prisma.mediaAsset.create({
-      data: {
-        type: 'STICKER',
-        url: sticker.url,
-        filename: sticker.filename,
-        mimeType: 'image/png',
-        size: 1024,
-        uploadedBy: admin.id,
-      },
-    });
+    const exists = await prisma.mediaAsset.findFirst({ where: { url: sticker.url } });
+    if (!exists) {
+      await prisma.mediaAsset.create({
+        data: {
+          type: 'STICKER',
+          url: sticker.url,
+          filename: sticker.filename,
+          mimeType: 'image/png',
+          size: 1024,
+          uploadedBy: admin.id,
+        },
+      });
+    }
   }
 
   console.log('✅ Sample stickers created');
