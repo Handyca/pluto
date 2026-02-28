@@ -1,58 +1,8 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
-// Extend Window to allow the optional WS overrides without `as any`.
-declare global {
-  interface Window {
-    __WS_PORT__?: number;
-    __WS_URL__?: string;
-  }
-}
-
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
-}
-
-// Build a WebSocket URL for browser clients.
-//
-// Resolution order (highest priority first):
-//   1. NEXT_PUBLIC_WS_URL env var  — full URL, highest priority
-//        e.g.  wss://ws.myapp.com/ws
-//   2. NEXT_PUBLIC_WS_PORT env var — builds ws://localhost:<port>/ws
-//        used when WS server is on a different port than the Next.js app
-//   3. window.__WS_URL__           — runtime JS override (legacy)
-//   4. window.__WS_PORT__          — runtime port override (legacy)
-//   5. Auto-derive from window.location (same host, works with reverse proxies)
-export function getWsUrl(): string {
-  if (typeof window === 'undefined') {
-    // Server-side (SSR/build): NEXT_PUBLIC_WS_URL > NEXT_PUBLIC_WS_PORT > WS_PORT
-    if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
-    const wsPort = process.env.NEXT_PUBLIC_WS_PORT || process.env.WS_PORT || '3001';
-    return `ws://localhost:${wsPort}/ws`;
-  }
-
-  // 1. Full URL env var (injected at build time)
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
-
-  // 2. Port-only env var (injected at build time) — WS server on different port
-  if (process.env.NEXT_PUBLIC_WS_PORT) {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${protocol}://${window.location.hostname}:${process.env.NEXT_PUBLIC_WS_PORT}/ws`;
-  }
-
-  // 3. Runtime JS override (set via <script> or dev tooling)
-  if (window.__WS_URL__) return window.__WS_URL__;
-
-  // 4. Legacy runtime port override
-  if (window.__WS_PORT__) {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${protocol}://${window.location.hostname}:${window.__WS_PORT__}/ws`;
-  }
-
-  // 5. Auto-derive: same host/port as the page (works through a reverse proxy
-  //    that forwards /ws to the WS server — e.g. nginx proxy_pass)
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${protocol}://${window.location.host}/ws`;
 }
 
 // Generate a unique anonymous ID (UUID v4)

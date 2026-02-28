@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Users,
   MessageSquare,
@@ -10,9 +10,8 @@ import {
   WifiOff,
   Activity,
   TrendingUp,
-} from 'lucide-react';
-import { useWebSocket } from '@/lib/hooks/use-websocket';
-import { getWsUrl } from '@/lib/utils';
+} from "lucide-react";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 interface DashboardStats {
   activeSessions: number;
@@ -24,25 +23,43 @@ interface DashboardStats {
 export function DashboardStats() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [latency, setLatency] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
   const connectTime = useState(() => Date.now())[0];
 
-  const wsUrl = typeof window !== 'undefined' ? getWsUrl() : '';
-  const { isConnected } = useWebSocket({
-    url: wsUrl,
-    onOpen: () => setLatency(Math.max(1, Date.now() - connectTime)),
-  });
+  // Subscribe to a lightweight "dashboard" channel purely to measure
+  // Supabase Realtime connectivity and connection latency.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supabase = getSupabaseBrowserClient();
+    const t0 = connectTime;
+    const channel = supabase.channel("dashboard").subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        setIsConnected(true);
+        setLatency(Math.max(1, Date.now() - t0));
+      } else if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
+        setIsConnected(false);
+      }
+    });
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [connectTime]);
 
   // Fetch stats separately
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch('/api/admin/stats');
+        const res = await fetch("/api/admin/stats");
         if (!res.ok) {
           console.error(`Failed to fetch stats: HTTP ${res.status}`);
-          let errorMessage = '';
+          let errorMessage = "";
           try {
             const error = await res.json();
-            errorMessage = error.error || error.message || '';
+            errorMessage = error.error || error.message || "";
           } catch {}
           console.error(`Error: ${errorMessage || res.statusText}`);
           return;
@@ -52,7 +69,7 @@ export function DashboardStats() {
           setStats(data.data);
         }
       } catch (error) {
-        console.error('Failed to fetch stats:', error);
+        console.error("Failed to fetch stats:", error);
       }
     };
 
@@ -64,28 +81,28 @@ export function DashboardStats() {
 
   const statCards = [
     {
-      title: 'Active Sessions',
+      title: "Active Sessions",
       value: stats?.activeSessions || 0,
       icon: Users,
-      color: 'text-blue-400',
+      color: "text-blue-400",
     },
     {
-      title: 'Participants',
+      title: "Participants",
       value: stats?.totalParticipants || 0,
       icon: Users,
-      color: 'text-purple-400',
+      color: "text-purple-400",
     },
     {
-      title: 'Messages',
+      title: "Messages",
       value: stats?.totalMessages || 0,
       icon: MessageSquare,
-      color: 'text-green-400',
+      color: "text-green-400",
     },
     {
-      title: 'Latency',
+      title: "Latency",
       value: `${latency}ms`,
       icon: Activity,
-      color: 'text-orange-400',
+      color: "text-orange-400",
     },
   ];
 
@@ -97,13 +114,17 @@ export function DashboardStats() {
           {isConnected ? (
             <>
               <Wifi className="h-5 w-5 text-green-500" />
-              <span className="text-sm font-medium">WebSocket Connected</span>
+              <span className="text-sm font-medium">
+                Supabase Realtime Connected
+              </span>
               <Badge className="bg-green-500/20 text-green-300">Live</Badge>
             </>
           ) : (
             <>
               <WifiOff className="h-5 w-5 text-red-500" />
-              <span className="text-sm font-medium">WebSocket Disconnected</span>
+              <span className="text-sm font-medium">
+                Supabase Realtime Disconnected
+              </span>
               <Badge className="bg-red-500/20 text-red-300">Offline</Badge>
             </>
           )}

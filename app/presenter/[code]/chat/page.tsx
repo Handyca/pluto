@@ -4,8 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import { useSessionByCode } from "@/lib/hooks/use-sessions";
 import { PageLoading } from "@/components/loading";
 import { MessageBubble } from "@/components/message-bubble";
-import { useWebSocket } from "@/lib/hooks/use-websocket";
-import { getWsUrl } from "@/lib/utils";
+import { useRealtime } from "@/lib/hooks/use-realtime";
 import { WSMessageType, Message, ThemeConfig } from "@/types";
 import { parseThemeConfig } from "@/lib/schemas";
 import { AnimatePresence } from "framer-motion";
@@ -23,9 +22,8 @@ export default function PresenterChatPage({
 
   const { data: sessionData, isLoading, error } = useSessionByCode(code);
 
-  const [wsUrl] = useState(() => getWsUrl());
-  const { sendMessage, isConnected } = useWebSocket({
-    url: wsUrl,
+  const { isConnected } = useRealtime({
+    sessionId: sessionData?.id ?? "",
     onMessage: (wsMessage) => {
       switch (wsMessage.type) {
         case WSMessageType.SESSION_JOINED:
@@ -56,13 +54,9 @@ export default function PresenterChatPage({
   });
 
   useEffect(() => {
-    if (!isConnected || !sessionData) return;
-    sendMessage({
-      type: WSMessageType.JOIN_SESSION,
-      payload: { sessionCode: code },
-    });
+    if (!sessionData) return;
     setThemeConfig(parseThemeConfig(sessionData.themeConfig));
-  }, [isConnected, sessionData, code, sendMessage]);
+  }, [sessionData]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {

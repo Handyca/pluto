@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyParticipantToken, extractParticipantToken } from '@/lib/participant-auth';
 import { z } from 'zod';
 import { messageLimiter, getClientIp } from '@/lib/rate-limit';
-import { getWsManager } from '@/lib/ws-manager';
+import { getWsManager, broadcastNewMessage } from '@/lib/ws-manager';
 
 export const runtime = 'nodejs';
 
@@ -32,17 +32,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verify access (either admin or participant)
+    // Verify access (admin, participant, or public read for visible messages)
     const session = await auth();
     const token = extractParticipantToken(request.headers);
     const participantSession = token ? await verifyParticipantToken(token) : null;
-
-    if (!session?.user && !participantSession) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const isPublicAccess = !session?.user && !participantSession;
 
     // Verify session exists
     const sessionData = await prisma.session.findUnique({
@@ -72,18 +66,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Public access is allowed for active sessions — visible messages only
+    if (isPublicAccess && !sessionData.isActive) {
+      return NextResponse.json(
+        { success: false, error: 'Session not active' },
+        { status: 403 }
+      );
+    }
+
     const messages = await prisma.message.findMany({
       where: {
         sessionId,
-        ...(before && {
-          createdAt: {
-            lt: new Date(before),
-          },
-        }),
-        // Non-admins only see visible messages
-        ...(participantSession && {
-          isVisible: true,
-        }),
+        ...(before && { createdAt: { lt: new Date(before) } }),
+        // Non-admins (participants & public access) only see visible messages
+        ...((participantSession || isPublicAccess) && { isVisible: true }),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -162,6 +158,9 @@ export async function POST(request: NextRequest) {
         stickerUrl: validatedData.stickerUrl,
       },
     });
+
+    // Broadcast the new message to all Supabase Realtime subscribers.
+    broadcastNewMessage(validatedData.sessionId, message);
 
     return NextResponse.json({
       success: true,

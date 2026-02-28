@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect, useRef } from "react";
 import { useJoinSession, useSessionByCode } from "@/lib/hooks/use-sessions";
-import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { useRealtime } from "@/lib/hooks/use-realtime";
 import { PageLoading } from "@/components/loading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import { WSMessageType, Message, MessageType } from "@/types";
 import { Send, Loader2, X } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { generateAnonymousId, getWsUrl } from "@/lib/utils";
+import { generateAnonymousId } from "@/lib/utils";
 
 // LocalStorage keys
 const STORAGE_KEY_PREFIX = "pluto_participant_";
@@ -85,10 +85,9 @@ export default function JoinPage({
     });
   };
 
-  // WebSocket connection
-  const [wsUrl] = useState(() => getWsUrl());
-  const { sendMessage: sendWsMessage, isConnected } = useWebSocket({
-    url: wsUrl,
+  // Supabase Realtime — subscribe to the session channel once we have the session ID
+  const { isConnected } = useRealtime({
+    sessionId: sessionInfo?.id ?? "",
     onMessage: (wsMessage) => {
       switch (wsMessage.type) {
         case WSMessageType.SESSION_JOINED:
@@ -118,19 +117,8 @@ export default function JoinPage({
     },
   });
 
-  // Join session via WebSocket when connected
-  useEffect(() => {
-    if (isConnected && joined && token) {
-      sendWsMessage({
-        type: WSMessageType.JOIN_SESSION,
-        payload: {
-          sessionCode: code,
-          token,
-          isAdmin: false,
-        },
-      });
-    }
-  }, [isConnected, joined, token, code, sendWsMessage]);
+  // Subscription to the Supabase channel is handled automatically by useRealtime
+  // once sessionInfo?.id is available. No explicit JOIN_SESSION message is needed.
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -178,6 +166,29 @@ export default function JoinPage({
     // joinMutation.mutateAsync is a stable reference from TanStack Query
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
+
+  /** Send a message to the server via HTTP POST /api/messages.
+   *  The participant_token cookie (httpOnly) is sent automatically. */
+  const postMessage = async (payload: {
+    type: MessageType;
+    content: string;
+    imageUrl?: string;
+    stickerUrl?: string;
+  }) => {
+    if (!sessionInfo?.id) return;
+    await fetch("/api/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: sessionInfo.id,
+        participantName,
+        type: payload.type,
+        content: payload.content,
+        ...(payload.imageUrl && { imageUrl: payload.imageUrl }),
+        ...(payload.stickerUrl && { stickerUrl: payload.stickerUrl }),
+      }),
+    });
+  };
 
   const addOptimisticMessage = (payload: {
     type: MessageType;
@@ -252,14 +263,9 @@ export default function JoinPage({
         type: MessageType.TEXT,
         content: messageInput.trim(),
       });
-      sendWsMessage({
-        type: WSMessageType.SEND_MESSAGE,
-        payload: {
-          sessionId: sessionInfo.id,
-          participantName,
-          type: MessageType.TEXT,
-          content: messageInput.trim(),
-        },
+      await postMessage({
+        type: MessageType.TEXT,
+        content: messageInput.trim(),
       });
 
       setMessageInput("");
@@ -309,15 +315,10 @@ export default function JoinPage({
         imageUrl: result.data.url,
       });
 
-      sendWsMessage({
-        type: WSMessageType.SEND_MESSAGE,
-        payload: {
-          sessionId: sessionInfo.id,
-          participantName,
-          type: MessageType.IMAGE,
-          content: messageInput.trim(),
-          imageUrl: result.data.url,
-        },
+      await postMessage({
+        type: MessageType.IMAGE,
+        content: messageInput.trim(),
+        imageUrl: result.data.url,
       });
 
       setMessageInput("");

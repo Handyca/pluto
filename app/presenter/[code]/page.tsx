@@ -5,8 +5,7 @@ import { useSessionByCode } from "@/lib/hooks/use-sessions";
 import { PageLoading } from "@/components/loading";
 import { VideoBackground } from "@/components/video-background";
 import { MessageBubble } from "@/components/message-bubble";
-import { useWebSocket } from "@/lib/hooks/use-websocket";
-import { getWsUrl } from "@/lib/utils";
+import { useRealtime } from "@/lib/hooks/use-realtime";
 import { WSMessageType, Message, ThemeConfig } from "@/types";
 import { parseThemeConfig } from "@/lib/schemas";
 import { AnimatePresence } from "framer-motion";
@@ -76,11 +75,10 @@ export default function PresenterPage({
   // changes that may be missed when the WS broadcast does not reach this client.
   const { data: sessionData, isLoading, error } = useSessionByCode(code, 5000);
 
-  // WebSocket connection — derive URL from current hostname so it works from
-  // any host (localhost, dev containers, remote servers).
-  const [wsUrl] = useState(() => getWsUrl());
-  const { sendMessage, isConnected } = useWebSocket({
-    url: wsUrl,
+  // Supabase Realtime connection — subscribes to session:{sessionData.id} channel.
+  // Initial messages are delivered via a synthetic SESSION_JOINED event from the hook.
+  const { isConnected } = useRealtime({
+    sessionId: sessionData?.id ?? "",
     onMessage: (wsMessage) => {
       switch (wsMessage.type) {
         case WSMessageType.SESSION_JOINED:
@@ -123,25 +121,17 @@ export default function PresenterPage({
     },
   });
 
-  // Join session via WebSocket; re-runs on every reconnect so the presenter
-  // re-enters the room after a WS drop.  isAdmin is intentionally omitted —
-  // NextAuth v5 changed the session-cookie name so server-side getToken() no
-  // longer works on the WS upgrade request; the presenter receives all
-  // broadcasts as an observer and gets the initial messages from SESSION_JOINED.
+  // Subscribe to session room and apply theme/bg when sessionData first loads.
+  // (Re-runs on reconnect and on data changes.)
   useEffect(() => {
-    if (!isConnected || !sessionData) return;
-
-    sendMessage({
-      type: WSMessageType.JOIN_SESSION,
-      payload: { sessionCode: code },
-    });
+    if (!sessionData) return;
 
     /* eslint-disable react-hooks/set-state-in-effect */
     setThemeConfig(parseThemeConfig(sessionData.themeConfig));
     setBackgroundType(sessionData.backgroundType);
     setBackgroundUrl(sessionData.backgroundUrl ?? null);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isConnected, sessionData, code, sendMessage]);
+  }, [sessionData]);
 
   // Polling sync — apply background / theme changes detected by the 5-second
   // refetch even when the WS broadcast is missed.  We track last-applied values
@@ -609,9 +599,7 @@ export default function PresenterPage({
                     }`}
                   />
                   <span>
-                    {isConnected
-                      ? "Live — WebSocket connected"
-                      : "Disconnected"}
+                    {isConnected ? "Live — Supabase connected" : "Disconnected"}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">

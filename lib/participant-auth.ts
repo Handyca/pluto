@@ -1,13 +1,14 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { ParticipantSession } from '@/types';
 
-if (!process.env.NEXTAUTH_SECRET) {
+const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+if (!secret) {
   throw new Error(
-    'NEXTAUTH_SECRET environment variable is not set. ' +
+    'AUTH_SECRET environment variable is not set. ' +
     'Generate one with: openssl rand -base64 32'
   );
 }
-const JWT_SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+const JWT_SECRET = new TextEncoder().encode(secret);
 
 /**
  * Create a JWT token for anonymous participant

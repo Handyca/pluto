@@ -12,7 +12,7 @@ import {
   useUploadFile,
   useDeleteAllMessages,
 } from "@/lib/hooks/use-messages";
-import { useWebSocket } from "@/lib/hooks/use-websocket";
+import { useRealtime } from "@/lib/hooks/use-realtime";
 import { parseThemeConfig } from "@/lib/schemas";
 import { PageLoading } from "@/components/loading";
 import { Button } from "@/components/ui/button";
@@ -65,11 +65,9 @@ import {
   Users,
   ExternalLink,
   MessageSquare,
-  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { getWsUrl } from "@/lib/utils";
 import { WSMessageType, type Message, type ThemeConfig } from "@/types";
 
 // ---- Chat-overlay colour helpers ------------------------------------------
@@ -269,9 +267,6 @@ export default function SessionManagePage({
   const [deleteMessageId, setDeleteMessageId] = useState<string | null>(null);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
 
-  // Session code state
-  const [sessionCode, setSessionCode] = useState("");
-
   // Track whether the WS SESSION_JOINED has already seeded the message list.
   const wsJoinedRef = useRef(false);
 
@@ -297,7 +292,6 @@ export default function SessionManagePage({
       setIsActive(session.isActive);
       setBackgroundType(session.backgroundType as "color" | "image" | "video");
       setBackgroundUrl(session.backgroundUrl || "");
-      setSessionCode(session.code);
       const tc = parseThemeConfig(session.themeConfig);
       setShowQrCode(tc.showQrCode !== false);
       setThemeConfig(tc);
@@ -310,17 +304,14 @@ export default function SessionManagePage({
     }
   }, [session]);
 
-  // ── WebSocket real-time updates ─────────────────────────────────────────
-  const [wsUrl] = useState(() =>
-    typeof window !== "undefined" ? getWsUrl() : "",
-  );
-  const { sendMessage: sendWsMessage, isConnected } = useWebSocket({
-    url: wsUrl,
+  // ── Supabase Realtime real-time updates ───────────────────────────────────
+  const { isConnected, isConnecting, disconnect, reconnect } = useRealtime({
+    sessionId: session?.id ?? "",
     onMessage: (wsMsg) => {
       switch (wsMsg.type) {
         case WSMessageType.SESSION_JOINED:
-          // WS initial messages are visible-only. Use them only if REST hasn't
-          // seeded the list yet (handles the case where WS is faster than REST).
+          // useRealtime emits SESSION_JOINED with initial visible messages.
+          // Only seed if the REST list is still empty.
           if (!wsJoinedRef.current) {
             wsJoinedRef.current = true;
             setMessages((prev) =>
@@ -353,18 +344,6 @@ export default function SessionManagePage({
       }
     },
   });
-
-  // Join the WS room as an observer (no isAdmin flag) so we receive all
-  // broadcast events without needing NextAuth cookie pre-auth on the WS server.
-  // Admin actions (hide/pin/delete) continue to go through the REST API.
-  useEffect(() => {
-    if (!isConnected || !session) return;
-    wsJoinedRef.current = false; // reset so SESSION_JOINED seeds on reconnect
-    sendWsMessage({
-      type: WSMessageType.JOIN_SESSION,
-      payload: { sessionCode: session.code },
-    });
-  }, [isConnected, session, sendWsMessage]);
   // ────────────────────────────────────────────────────────────────────────
 
   const handleSaveBasicSettings = async () => {
@@ -419,13 +398,7 @@ export default function SessionManagePage({
         const result = await uploadFile.mutateAsync({ file, type: "video" });
         setBackgroundUrl(result.url);
         setBackgroundType("video");
-        // Auto-save so the presenter updates in real-time via WebSocket broadcast.
-        await updateSession.mutateAsync({
-          backgroundType: "video",
-          backgroundUrl: result.url,
-          themeConfig: { ...themeConfig },
-        });
-        toast.success("Video uploaded successfully");
+        toast.success("Video uploaded — click Save Background to apply");
       } catch {
         // Error handled by mutation
       }
@@ -447,13 +420,7 @@ export default function SessionManagePage({
       URL.revokeObjectURL(previewUrl);
       setBackgroundUrl(result.url);
       setBackgroundType("image");
-      // Auto-save so the presenter updates in real-time via WebSocket broadcast.
-      await updateSession.mutateAsync({
-        backgroundType: "image",
-        backgroundUrl: result.url,
-        themeConfig: { ...themeConfig },
-      });
-      toast.success("Image uploaded successfully");
+      toast.success("Image uploaded — click Save Background to apply");
     } catch {
       // Error handled by mutation
     }
@@ -514,21 +481,37 @@ export default function SessionManagePage({
             </div>
             <div className="ml-auto flex items-center gap-2">
               {isConnected ? (
-                <Badge
-                  variant="secondary"
-                  className="gap-1.5 text-green-600 border-green-200"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-green-600 border-green-300 hover:text-red-600 hover:border-red-300"
+                  onClick={disconnect}
+                  title="Click to disconnect"
                 >
                   <Wifi className="h-3 w-3" />
                   Live
-                </Badge>
-              ) : (
-                <Badge
+                </Button>
+              ) : isConnecting ? (
+                <Button
                   variant="outline"
+                  size="sm"
                   className="gap-1.5 text-muted-foreground"
+                  disabled
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Connecting…
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-red-600 border-red-300 hover:text-green-600 hover:border-green-300"
+                  onClick={reconnect}
+                  title="Click to reconnect"
                 >
                   <WifiOff className="h-3 w-3" />
-                  Connecting…
-                </Badge>
+                  Disconnected
+                </Button>
               )}
             </div>
           </div>
@@ -710,7 +693,11 @@ export default function SessionManagePage({
                     </Button>
                   </CardContent>
                 </Card>
+              </TabsContent>
 
+              {/* Theme Tab */}
+              <TabsContent value="theme" className="space-y-4">
+                {/* ── Background ───────────────────────────────────── */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Background</CardTitle>
@@ -723,18 +710,8 @@ export default function SessionManagePage({
                       <Label>Background Type</Label>
                       <Select
                         value={backgroundType}
-                        onValueChange={async (
-                          value: "color" | "image" | "video",
-                        ) => {
+                        onValueChange={(value: "color" | "image" | "video") => {
                           setBackgroundType(value);
-                          // Immediately broadcast the type change so the presenter
-                          // updates without requiring a manual "Save Background" click.
-                          await updateSession.mutateAsync({
-                            backgroundType: value,
-                            backgroundUrl:
-                              value === "color" ? null : backgroundUrl || null,
-                            themeConfig: { ...themeConfig },
-                          });
                         }}
                       >
                         <SelectTrigger>
@@ -808,67 +785,6 @@ export default function SessionManagePage({
                   </CardContent>
                 </Card>
 
-                {/* Session Code */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Session Code</CardTitle>
-                    <CardDescription>
-                      The code participants use to join this session
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex gap-2">
-                      <Input
-                        value={sessionCode}
-                        onChange={(e) =>
-                          setSessionCode(
-                            e.target.value
-                              .toUpperCase()
-                              .replace(/[^A-Z0-9-]/g, ""),
-                          )
-                        }
-                        placeholder="e.g. CONF2024"
-                        className="font-mono uppercase"
-                        maxLength={20}
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        title="Auto-generate code"
-                        onClick={() =>
-                          setSessionCode(
-                            Math.random()
-                              .toString(36)
-                              .slice(2, 8)
-                              .toUpperCase(),
-                          )
-                        }
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      3–20 characters, letters, numbers, and hyphens only
-                    </p>
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        await updateSession.mutateAsync({ code: sessionCode });
-                      }}
-                      disabled={
-                        !sessionCode ||
-                        sessionCode === session?.code ||
-                        updateSession.isPending
-                      }
-                    >
-                      {updateSession.isPending ? "Saving…" : "Save Code"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* Theme Tab */}
-              <TabsContent value="theme" className="space-y-4">
                 {/* ── Template Presets ─────────────────────────────── */}
                 <Card>
                   <CardHeader>
@@ -1271,7 +1187,13 @@ export default function SessionManagePage({
 
           {/* Sidebar */}
           <div className="space-y-4">
-            <SessionCodeDisplay code={session.code} joinUrl={joinUrl} />
+            <SessionCodeDisplay
+              code={session.code}
+              joinUrl={joinUrl}
+              onSave={async (code) => {
+                await updateSession.mutateAsync({ code });
+              }}
+            />
           </div>
         </div>
       </div>
