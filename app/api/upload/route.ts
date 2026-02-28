@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 import { isValidImageType, isValidVideoType, resolveFileMime } from '@/lib/utils';
 import { verifyParticipantToken } from '@/lib/participant-auth';
 import { MediaType } from '@prisma/client';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { uploadLimiter, getClientIp } from '@/lib/rate-limit';
+import { getSupabaseServerClient } from '@/lib/supabase';
 
 const ALLOWED_UPLOAD_TYPES = z.enum(['image', 'video', 'sticker']);
 const ALLOWED_MEDIA_TYPES = z.nativeEnum(MediaType);
@@ -141,9 +140,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique filename — use built-in crypto so there is no ESM dep.
-    const uploadDir = join(process.cwd(), 'public', 'uploads', type);
-    await mkdir(uploadDir, { recursive: true });
-
     const bytes = await file.arrayBuffer();
     let buffer = Buffer.from(bytes);
     let finalMime = resolvedMime || file.type;
@@ -163,14 +159,36 @@ export async function POST(request: NextRequest) {
     }
 
     const filename = `${crypto.randomUUID()}.${ext}`;
-    const filepath = join(uploadDir, filename);
-    await writeFile(filepath, buffer);
+    const storagePath = `${type}/${filename}`;
+
+    // Upload to Supabase Storage (works on Vercel — no local filesystem writes)
+    const supabase = getSupabaseServerClient();
+    const { error: storageError } = await supabase.storage
+      .from('uploads')
+      .upload(storagePath, buffer, {
+        contentType: finalMime,
+        upsert: false,
+      });
+
+    if (storageError) {
+      console.error('Supabase Storage upload error:', storageError);
+      return NextResponse.json(
+        { success: false, error: `Storage upload failed: ${storageError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('uploads')
+      .getPublicUrl(storagePath);
+
+    const publicUrl = publicUrlData.publicUrl;
 
     // Create media asset record
     const mediaAsset = await prisma.mediaAsset.create({
       data: {
         type: type === 'image' ? 'IMAGE' : type === 'video' ? 'VIDEO' : 'STICKER',
-        url: `/uploads/${type}/${filename}`,
+        url: publicUrl,
         filename,
         mimeType: finalMime,
         size: buffer.length,
