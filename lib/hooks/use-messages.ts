@@ -75,59 +75,90 @@ export function useDeleteMessage() {
   });
 }
 
+/**
+ * Two-step upload that bypasses Vercel's 4.5 MB function body limit:
+ *   1. POST /api/upload/sign  — get a Supabase signed upload URL (tiny JSON)
+ *   2. PUT  <signedUrl>       — upload file bytes directly to Supabase Storage
+ *   3. POST /api/upload/confirm — save the DB record (tiny JSON)
+ */
+async function uploadFileDirect(
+  file: File,
+  type: 'image' | 'video' | 'sticker',
+  participantToken?: string,
+): Promise<{ id: string; url: string; filename: string; size: number; mimeType: string }> {
+  // Step 1 — get signed URL
+  const signRes = await fetch('/api/upload/sign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type,
+      filename: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size,
+      ...(participantToken && { participantToken }),
+    }),
+  });
+
+  if (!signRes.ok) {
+    const err = await signRes.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || 'Failed to get upload URL');
+  }
+
+  const signData = await signRes.json() as {
+    success: boolean;
+    data: { signedUrl: string; path: string; filename: string; publicUrl: string };
+  };
+  const { signedUrl, path, filename, publicUrl } = signData.data;
+
+  // Step 2 — upload directly to Supabase (bypasses Vercel)
+  const putRes = await fetch(signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+
+  if (!putRes.ok) {
+    throw new Error(`Storage upload failed (${putRes.status})`);
+  }
+
+  // Step 3 — save DB record
+  const confirmRes = await fetch('/api/upload/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path,
+      publicUrl,
+      filename,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size,
+      type,
+      ...(participantToken && { participantToken }),
+    }),
+  });
+
+  if (!confirmRes.ok) {
+    const err = await confirmRes.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error || 'Failed to save upload record');
+  }
+
+  const confirmData = await confirmRes.json() as { success: boolean; data: { id: string; url: string; filename: string; size: number; mimeType: string } };
+  if (!confirmData.success) throw new Error('Failed to confirm upload');
+  return confirmData.data;
+}
+
 // Upload file
 export function useUploadFile() {
   return useMutation({
     mutationFn: async ({ file, type }: { file: File; type: 'image' | 'video' | 'sticker' }) => {
-      // Ensure file is fully loaded before creating FormData
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', type);
-
-      // Use a longer timeout for large files and ensure proper headers
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-
-      try {
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-          // Let the browser set Content-Type with boundary automatically
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!res.ok) {
-          const errorText = await res.text();
-          let errorMessage = 'Failed to upload file';
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.error || errorMessage;
-          } catch {
-            errorMessage = errorText || errorMessage;
-          }
-          throw new Error(errorMessage);
-        }
-        
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        return data.data;
-      } catch (error: unknown) {
-        clearTimeout(timeoutId);
-        if (error instanceof Error && error.name === 'AbortError') {
-          throw new Error('Upload timeout - file may be too large');
-        }
-        throw error;
-      }
+      return uploadFileDirect(file, type);
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to upload file');
     },
   });
 }
+
+export { uploadFileDirect };
 
 // Fetch media assets
 export function useMediaAssets(type?: 'IMAGE' | 'VIDEO' | 'STICKER') {

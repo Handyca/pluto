@@ -23,6 +23,7 @@ import { Send, Loader2, X } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { generateAnonymousId } from "@/lib/utils";
+import { uploadFileDirect } from "@/lib/hooks/use-messages";
 
 // LocalStorage keys
 const STORAGE_KEY_PREFIX = "pluto_participant_";
@@ -290,35 +291,23 @@ export default function JoinPage({
 
     setIsSending(true);
     try {
-      const formData = new FormData();
-      formData.append("file", selectedPhotoFile);
-      formData.append("type", "image");
-      if (token) {
-        formData.append("participantToken", token);
-      }
-
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to upload image");
-      }
-
-      const result = await response.json();
+      // Upload directly to Supabase Storage (bypasses Vercel function body limit)
+      const uploaded = await uploadFileDirect(
+        selectedPhotoFile,
+        'image',
+        token ?? undefined,
+      );
 
       addOptimisticMessage({
         type: MessageType.IMAGE,
         content: messageInput.trim(),
-        imageUrl: result.data.url,
+        imageUrl: uploaded.url,
       });
 
       await postMessage({
         type: MessageType.IMAGE,
         content: messageInput.trim(),
-        imageUrl: result.data.url,
+        imageUrl: uploaded.url,
       });
 
       setMessageInput("");
