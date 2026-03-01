@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     console.error('Error creating session:', error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to create session' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }

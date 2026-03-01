@@ -80,9 +80,15 @@ export function useUpdateSession(id: string) {
       if (!data.success) throw new Error('Failed to update session');
       return data.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions', id] });
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    onSuccess: (updatedSession) => {
+      // Update both the single-session and list caches immediately without
+      // a server round-trip (optimistic cache write instead of invalidation).
+      queryClient.setQueryData(['sessions', id], updatedSession);
+      queryClient.setQueryData(
+        ['sessions'],
+        (old: SessionWithRelations[] | undefined) =>
+          old?.map((s) => (s.id === id ? { ...s, ...updatedSession } : s)) ?? old,
+      );
       toast.success('Session updated successfully');
     },
     onError: (error: Error) => {

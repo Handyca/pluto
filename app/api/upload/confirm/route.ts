@@ -90,8 +90,7 @@ export async function POST(request: NextRequest) {
       message: 'File uploaded successfully',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('Error in /api/upload/confirm:', message);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    console.error('Error in /api/upload/confirm:', error);
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }

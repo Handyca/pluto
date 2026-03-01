@@ -43,9 +43,13 @@ export async function GET(request: NextRequest) {
       typeFilter = parsedMediaType.data;
     }
 
+    const rawLimit = parseInt(searchParams.get('limit') || '200', 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, rawLimit), 200) : 200;
+
     const mediaAssets = await prisma.mediaAsset.findMany({
       where: typeFilter ? { type: typeFilter } : undefined,
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
 
     return NextResponse.json({

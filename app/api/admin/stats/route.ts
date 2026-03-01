@@ -40,10 +40,9 @@ export async function GET() {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('Error fetching stats:', message, error);
+    console.error('Error fetching stats:', error);
     return NextResponse.json(
-      { success: false, error: message || 'Failed to fetch stats' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
     );
   }
