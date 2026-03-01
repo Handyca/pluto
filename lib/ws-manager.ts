@@ -41,10 +41,9 @@ async function broadcastToSession(
       body: JSON.stringify({
         messages: [
           {
-            // subTopic (no "realtime:" prefix) — matches what .channel('session:ID') uses.
-            // The Supabase REST server wraps this in the Phoenix broadcast envelope
-            // before delivering to WebSocket subscribers.
-            topic: `session:${sessionId}`,
+            // Must match the full Phoenix channel name that the JS client subscribes to.
+            // supabase.channel('session:ID') maps to the Phoenix topic 'realtime:session:ID'.
+            topic: `realtime:session:${sessionId}`,
             event,
             payload,
           },
