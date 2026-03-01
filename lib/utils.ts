@@ -10,14 +10,15 @@ export function generateAnonymousId(): string {
   return crypto.randomUUID();
 }
 
-// Generate a random 6-character session code
+// Generate a cryptographically random 6-character session code.
+// Uses crypto.getRandomValues() instead of Math.random() for better entropy.
 export function generateSessionCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude similar looking chars
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude visually similar chars
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => chars[b % chars.length])
+    .join('');
 }
 
 // Get initials from a name (up to 2 characters)

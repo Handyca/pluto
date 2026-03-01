@@ -22,8 +22,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get('sessionId');
-    const limit = parseInt(searchParams.get('limit') || '100', 10);
-    const before = searchParams.get('before'); // For pagination
+    const rawLimit = parseInt(searchParams.get('limit') || '100', 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, rawLimit), 200) : 100;
+    const beforeRaw = searchParams.get('before'); // ISO date string for pagination
+    const before = beforeRaw ? new Date(beforeRaw) : null;
+    if (beforeRaw && isNaN(before!.getTime())) {
+      return NextResponse.json(
+        { success: false, error: "Invalid 'before' cursor — must be an ISO date string" },
+        { status: 400 },
+      );
+    }
 
     if (!sessionId) {
       return NextResponse.json(
@@ -77,7 +85,7 @@ export async function GET(request: NextRequest) {
     const messages = await prisma.message.findMany({
       where: {
         sessionId,
-        ...(before && { createdAt: { lt: new Date(before) } }),
+        ...(before && { createdAt: { lt: before } }),
         // Non-admins (participants & public access) only see visible messages
         ...((participantSession || isPublicAccess) && { isVisible: true }),
       },

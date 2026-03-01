@@ -294,7 +294,7 @@ export default function JoinPage({
       // Upload directly to Supabase Storage (bypasses Vercel function body limit)
       const uploaded = await uploadFileDirect(
         selectedPhotoFile,
-        'image',
+        "image",
         token ?? undefined,
       );
 

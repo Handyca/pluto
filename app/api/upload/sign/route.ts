@@ -16,6 +16,7 @@ import { z } from 'zod';
 
 const MAX_IMAGE_SIZE = 30 * 1024 * 1024;   // 30 MB
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024;  // 100 MB
+const MAX_STICKER_SIZE = 5 * 1024 * 1024;  // 5 MB
 
 const BodySchema = z.object({
   type: z.enum(['image', 'video', 'sticker']),
@@ -89,6 +90,9 @@ export async function POST(request: NextRequest) {
     }
     if (isVideo && size > MAX_VIDEO_SIZE) {
       return NextResponse.json({ success: false, error: 'Video too large (max 100 MB)' }, { status: 400 });
+    }
+    if (type === 'sticker' && size > MAX_STICKER_SIZE) {
+      return NextResponse.json({ success: false, error: 'Sticker too large (max 5 MB)' }, { status: 400 });
     }
 
     // ── Generate signed upload URL ────────────────────────────────────────

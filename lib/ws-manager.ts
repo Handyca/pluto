@@ -2,16 +2,20 @@
  * Supabase Realtime broadcast helpers.
  *
  * API routes call these functions to push real-time events to every browser
- * client subscribed to a session channel.  All communication happens over
- * the Supabase Realtime REST broadcast endpoint — no standalone WS server needed.
+ * client subscribed to a session channel.
  *
- * Channel naming:  session:{sessionId}
- * Realtime topic:  realtime:session:{sessionId}
+ * Uses the Supabase JS client's channel().send() which handles the correct
+ * internal topic naming automatically — the same channel name used by the
+ * browser client is used here, so the match is guaranteed.
+ *
+ * Channel naming: session:{sessionId}  (used on both server and client)
  *
  * Required env vars (server-side only):
  *   NEXT_PUBLIC_SUPABASE_URL    — e.g.  https://xxxx.supabase.co
  *   SUPABASE_SERVICE_ROLE_KEY   — service-role JWT (never expose to the browser)
  */
+
+import { getSupabaseServerClient } from '@/lib/supabase';
 
 // ── Internal broadcast helper ──────────────────────────────────────────────
 
@@ -20,43 +24,31 @@ async function broadcastToSession(
   event: string,
   payload: unknown,
 ): Promise<void> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.warn(
       '[realtime] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY — broadcast skipped.',
     );
     return;
   }
 
+  const supabase = getSupabaseServerClient();
+  // Use the same channel name the browser client subscribes to.
+  // The Supabase JS client handles topic formatting internally.
+  const channel = supabase.channel(`session:${sessionId}`);
+
   try {
-    const res = await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${serviceRoleKey}`,
-        apikey: serviceRoleKey,
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            // Must match the full Phoenix channel name that the JS client subscribes to.
-            // supabase.channel('session:ID') maps to the Phoenix topic 'realtime:session:ID'.
-            topic: `realtime:session:${sessionId}`,
-            event,
-            payload,
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(4000),
+    const result = await channel.send({
+      type: 'broadcast',
+      event,
+      payload: payload as Record<string, unknown>,
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error(`[realtime] broadcast failed ${res.status}:`, body);
+    if (result !== 'ok') {
+      console.error(`[realtime] broadcast failed for event "${event}":`, result);
     }
   } catch (err) {
     console.error('[realtime] broadcast error:', err);
+  } finally {
+    await supabase.removeChannel(channel);
   }
 }
 

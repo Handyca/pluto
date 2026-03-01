@@ -8,6 +8,21 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+// Validate required env vars at module load time so misconfiguration fails
+// loudly instead of silently producing empty-string clients that appear to
+// work but deliver no events.
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    // In the browser only NEXT_PUBLIC_* vars are available — skip server-only checks.
+    if (typeof window === 'undefined') {
+      throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return '';
+  }
+  return value;
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
@@ -37,8 +52,9 @@ export function getSupabaseBrowserClient(): SupabaseClient {
  * Uses the service-role key — never call this on the client.
  */
 export function getSupabaseServerClient(): SupabaseClient {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-  return createClient(supabaseUrl, serviceRoleKey, {
+  const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+  return createClient(url, serviceRoleKey, {
     auth: { persistSession: false },
   });
 }

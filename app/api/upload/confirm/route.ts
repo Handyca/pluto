@@ -9,11 +9,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { verifyParticipantToken } from '@/lib/participant-auth';
+import { getSupabaseServerClient } from '@/lib/supabase';
 import { z } from 'zod';
 
 const BodySchema = z.object({
-  path: z.string().min(1),
-  publicUrl: z.string().url(),
+  path: z.string().min(1).max(500),
+  // publicUrl is intentionally NOT accepted from the client — it is derived
+  // server-side from the path to prevent URL injection attacks.
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(128),
   size: z.number().int().positive(),
@@ -38,7 +40,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { path, publicUrl, filename, mimeType, size, type, participantToken } = parsed.data;
+    const { path, filename, mimeType, size, type, participantToken } = parsed.data;
+
+    // Derive the public URL server-side — never trust the client-supplied value.
+    const supabase = getSupabaseServerClient();
+    const { data: publicUrlData } = supabase.storage.from('uploads').getPublicUrl(path);
+    const publicUrl = publicUrlData.publicUrl;
 
     // ── Auth ──────────────────────────────────────────────────────────────
     const session = await auth();

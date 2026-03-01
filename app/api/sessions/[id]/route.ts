@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ThemeConfigSchema } from '@/lib/schemas';
 import { z } from 'zod';
 import { getWsManager } from '@/lib/ws-manager';
 
@@ -11,7 +12,7 @@ const updateSessionSchema = z.object({
   isActive: z.boolean().optional(),
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
   backgroundUrl: z.string().optional().nullable(),
-  themeConfig: z.record(z.string(), z.any()).optional(),
+  themeConfig: ThemeConfigSchema.optional(),
   code: z.string().min(3).max(20).regex(/^[A-Z0-9-]+$/).optional(),
 });
 

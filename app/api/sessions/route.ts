@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { generateSessionCode } from '@/lib/utils';
+import { ThemeConfigSchema, DEFAULT_THEME_CONFIG } from '@/lib/schemas';
 import { z } from 'zod';
 
 export const runtime = 'nodejs';
@@ -10,7 +11,7 @@ const createSessionSchema = z.object({
   title: z.string().min(1).max(100),
   backgroundType: z.enum(['color', 'image', 'video']).optional(),
   backgroundUrl: z.string().url().optional().nullable(),
-  themeConfig: z.record(z.string(), z.any()).optional(),
+  themeConfig: ThemeConfigSchema.optional(),
 });
 
 // GET /api/sessions - Get all sessions for admin
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
         adminId: session.user.id,
         backgroundType: validatedData.backgroundType || 'color',
         backgroundUrl: validatedData.backgroundUrl,
-        themeConfig: validatedData.themeConfig || {
+        themeConfig: validatedData.themeConfig || DEFAULT_THEME_CONFIG || {
           primary: '#3b82f6',
           secondary: '#8b5cf6',
           background: '#1e293b',

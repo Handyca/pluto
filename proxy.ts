@@ -9,6 +9,7 @@ export const proxy = auth;
 export const config = {
   matcher: [
     '/admin/:path*',
+    '/api/admin/:path*',
     '/api/sessions/:path*',
     '/api/messages/:path*',
     '/api/upload/:path*',
