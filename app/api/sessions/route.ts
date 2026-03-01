@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { generateSessionCode } from '@/lib/utils';
 import { ThemeConfigSchema, DEFAULT_THEME_CONFIG } from '@/lib/schemas';
 import { z } from 'zod';
@@ -111,16 +112,7 @@ export async function POST(request: NextRequest) {
         adminId: session.user.id,
         backgroundType: validatedData.backgroundType || 'color',
         backgroundUrl: validatedData.backgroundUrl,
-        themeConfig: validatedData.themeConfig || DEFAULT_THEME_CONFIG || {
-          primary: '#3b82f6',
-          secondary: '#8b5cf6',
-          background: '#1e293b',
-          text: '#f1f5f9',
-          chatOverlay: 'rgba(15,23,42,0.9)',
-          fontFamily: 'Inter',
-          fontSize: '16',
-          chatPosition: 'right',
-        },
+        themeConfig: (validatedData.themeConfig ?? DEFAULT_THEME_CONFIG) as unknown as Prisma.InputJsonValue,
       },
     });
 

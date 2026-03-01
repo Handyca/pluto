@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { ThemeConfigSchema } from '@/lib/schemas';
 import { z } from 'zod';
 import { getWsManager } from '@/lib/ws-manager';
@@ -123,7 +124,7 @@ export async function PATCH(
 
     const updatedSession = await prisma.session.update({
       where: { id },
-      data: validatedData,
+      data: validatedData as unknown as Prisma.SessionUpdateInput,
     });
 
     // Broadcast real-time updates to all clients watching this session.
